@@ -1,797 +1,778 @@
-<!DOCTYPE html>
-<html lang="th">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FiveM - Gang Management System</title>
+import React, { useState, useMemo, useEffect } from 'react';
+import { 
+  Menu, X, Home, Package, Send, Users, Activity, 
+  Target, Shield, Check, XCircle, Clock, Plus, 
+  ArrowRightLeft, DollarSign, Trophy, Search, AlertCircle, LogOut
+} from 'lucide-react';
+
+// --- ข้อมูลจำลอง (MOCK DATA) ---
+const INITIAL_USERS = [
+  { id: 'u1', name: 'Kenapa', role: 'Leader', joinDate: '2024-01-10', contributed: 500, withdrawn: 100 },
+  { id: 'u2', name: 'Mike', role: 'Admin', joinDate: '2024-02-15', contributed: 300, withdrawn: 50 },
+  { id: 'u3', name: 'Tony', role: 'Admin', joinDate: '2024-03-01', contributed: 250, withdrawn: 80 },
+  { id: 'u4', name: 'Jack', role: 'Member', joinDate: '2024-06-20', contributed: 150, withdrawn: 200 },
+  { id: 'u5', name: 'Somchai', role: 'Member', joinDate: '2024-07-11', contributed: 90, withdrawn: 20 },
+  { id: 'u6', name: 'Bank', role: 'Member', joinDate: '2024-08-05', contributed: 45, withdrawn: 10 },
+];
+
+const INITIAL_INVENTORY = [
+  { id: 'i1', name: 'เหล็ก', quantity: 420, color: '#a8b8d0' },
+  { id: 'i2', name: 'กระสุน', quantity: 700, color: '#ef4444' },
+  { id: 'i3', name: 'ยา', quantity: 120, color: '#22c55e' },
+  { id: 'i4', name: 'ปืน', quantity: 6, color: '#a855f7' },
+  { id: 'i5', name: 'ปืนพก', quantity: 12, color: '#eab308' },
+  { id: 'i6', name: 'ผ้าพันแผล', quantity: 45, color: '#f9a8d4' },
+];
+
+const INITIAL_TARGETS = [
+  { id: 't1', item: 'เหล็ก', current: 230, target: 500, deadline: '2026-03-31' },
+  { id: 't2', item: 'กระสุน', current: 600, target: 1000, deadline: '2026-03-31' },
+  { id: 't3', item: 'ยา', current: 50, target: 200, deadline: '2026-04-05' },
+  { id: 't4', item: 'เงิน', current: 120000, target: 200000, deadline: '2026-03-31' },
+];
+
+const INITIAL_HELD_ITEMS = [
+  { id: 'h1', userId: 'u1', item: 'กระสุน', quantity: 200 },
+  { id: 'h2', userId: 'u2', item: 'ปืน', quantity: 1 },
+  { id: 'h3', userId: 'u4', item: 'ปืนพก', quantity: 1 },
+];
+
+const INITIAL_REQUESTS = [
+  { id: 'r1', type: 'ส่งของ', userId: 'u1', item: 'เหล็ก', amount: 50, note: 'ฟาร์มมาวันนี้', status: 'Pending', date: new Date(Date.now() - 3600000).toISOString() },
+  { id: 'r2', type: 'เบิกของ', userId: 'u4', item: 'ปืน', amount: 1, note: 'เอาไปยึดพื้นที่', status: 'Pending', date: new Date(Date.now() - 1800000).toISOString() },
+  { id: 'r3', type: 'ส่งของ', userId: 'u5', item: 'ยา', amount: 20, note: 'ต้มเสร็จแล้ว', status: 'Approved', date: new Date(Date.now() - 86400000).toISOString() },
+];
+
+const INITIAL_LOGS = [
+  { id: 'l1', date: new Date(Date.now() - 86400000).toISOString(), user: 'Admin Mike', action: 'อนุมัติการส่งของ', details: 'ยา x20 ถูกเพิ่มเข้าคลังแล้ว' },
+  { id: 'l2', date: new Date(Date.now() - 86400000 * 2).toISOString(), user: 'Leader Kenapa', action: 'ตั้งเป้าหมาย', details: 'ตั้งเป้าหมาย เงิน จำนวน 200,000$' },
+];
+
+// --- ฟังก์ชันช่วยเหลือ ---
+const formatMoney = (amount) => new Intl.NumberFormat('en-US').format(amount) + '$';
+const formatDate = (dateStr) => {
+  const d = new Date(dateStr);
+  return `${d.toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'})} ${d.toLocaleDateString('th-TH', {day: '2-digit', month: 'short'})}`;
+};
+
+const formatDateOnly = (dateStr) => {
+  if (!dateStr) return '-';
+  const d = new Date(dateStr);
+  return d.toLocaleDateString('th-TH', {day: '2-digit', month: 'short', year: 'numeric'});
+};
+
+export default function App() {
+  // State หลักของแอป
+  const [currentUser, setCurrentUser] = useState(INITIAL_USERS[0]); // เริ่มต้นเป็น Leader
+  const [activeTab, setActiveTab] = useState('หน้าแรก');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  
+  const [targetWeekName, setTargetWeekName] = useState('Week 1');
+  const [users, setUsers] = useState(INITIAL_USERS);
+  const [inventory, setInventory] = useState(INITIAL_INVENTORY);
+  const [gangMoney, setGangMoney] = useState(120000);
+  const [targets, setTargets] = useState(INITIAL_TARGETS);
+  const [heldItems, setHeldItems] = useState(INITIAL_HELD_ITEMS);
+  const [requests, setRequests] = useState(INITIAL_REQUESTS);
+  const [logs, setLogs] = useState(INITIAL_LOGS);
+
+  // สิทธิ์การเข้าถึง
+  const isLeader = currentUser.role === 'Leader';
+  const isAdmin = currentUser.role === 'Leader' || currentUser.role === 'Admin';
+
+  // --- ACTIONS ---
+  const addLog = (user, action, details) => {
+    const newLog = { id: Date.now().toString(), date: new Date().toISOString(), user, action, details };
+    setLogs(prev => [newLog, ...prev]);
+    // จำลองการส่ง Discord Webhook
+    console.log(`[DISCORD WEBHOOK] ${user} ${action}: ${details}`);
+  };
+
+  const handleRequestSubmit = (e, type, item, amount, note) => {
+    e.preventDefault();
+    const newReq = {
+      id: Date.now().toString(),
+      type,
+      userId: currentUser.id,
+      item,
+      amount: parseInt(amount),
+      note,
+      status: 'Pending',
+      date: new Date().toISOString()
+    };
+    setRequests(prev => [newReq, ...prev]);
+    addLog(currentUser.name, `ทำรายการ${type}`, `${item} x${amount} (สถานะ Pending)`);
+    alert('ส่งคำร้องเรียบร้อยแล้ว!');
+  };
+
+  const handleApproveRequest = (req) => {
+    const user = users.find(u => u.id === req.userId);
     
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    if (req.type === 'ส่งของ') {
+      // เพิ่มเข้าคลัง
+      setInventory(prev => {
+        const existing = prev.find(i => i.name === req.item);
+        if (existing) return prev.map(i => i.name === req.item ? { ...i, quantity: i.quantity + req.amount } : i);
+        return [...prev, { id: Date.now().toString(), name: req.item, quantity: req.amount }];
+      });
+      // อัปเดตเป้าหมาย
+      setTargets(prev => prev.map(t => t.item === req.item ? { ...t, current: t.current + req.amount } : t));
+      // อัปเดตสถิติผู้ใช้
+      setUsers(prev => prev.map(u => u.id === req.userId ? { ...u, contributed: u.contributed + req.amount } : u));
+      // กรณีเป็นเงินแก๊ง
+      if (req.item === 'เงิน') setGangMoney(prev => prev + req.amount);
+      
+      addLog(`${currentUser.role} ${currentUser.name}`, 'ยืนยันรายการส่งของ', `${user.name} ส่ง ${req.item} x${req.amount} เข้าคลังแล้ว`);
+    } 
+    else if (req.type === 'เบิกของ') {
+      // เช็คว่ามีของในคลังพอไหม
+      const invItem = inventory.find(i => i.name === req.item);
+      if (!invItem || invItem.quantity < req.amount) {
+        alert("มีของในคลังไม่เพียงพอ!");
+        return;
+      }
+      // ลดของออกจากคลัง
+      setInventory(prev => prev.map(i => i.name === req.item ? { ...i, quantity: i.quantity - req.amount } : i));
+      // เพิ่มของเข้ากระเป๋าคนถือ
+      setHeldItems(prev => {
+        const existing = prev.find(h => h.userId === req.userId && h.item === req.item);
+        if (existing) return prev.map(h => h.id === existing.id ? { ...h, quantity: h.quantity + req.amount } : h);
+        return [...prev, { id: Date.now().toString(), userId: req.userId, item: req.item, quantity: req.amount }];
+      });
+      // อัปเดตสถิติ
+      setUsers(prev => prev.map(u => u.id === req.userId ? { ...u, withdrawn: u.withdrawn + req.amount } : u));
+      // กรณีเงิน
+      if (req.item === 'เงิน') setGangMoney(prev => prev - req.amount);
+
+      addLog(`${currentUser.role} ${currentUser.name}`, 'อนุมัติการเบิกของ', `${user.name} เบิก ${req.item} x${req.amount} สำเร็จ`);
+    }
+
+    // อัปเดตสถานะเป็น Approved
+    setRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'Approved' } : r));
+  };
+
+  const handleRejectRequest = (req) => {
+  const user = users.find(u => u.id === req.userId);
+  setRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'Rejected' } : r));
+  addLog(`${currentUser.role} ${currentUser.name}`, 'ปฏิเสธรายการ', `ไม่อนุมัติคำร้องขอ${req.type} ${req.item} x${req.amount} ของ ${user.name}`);
+};
+
+const handleSetTarget = (e, item, targetVal, deadline) => {
+  e.preventDefault();
+  setTargets(prev => {
+    const existing = prev.find(t => t.item === item);
+    if (existing) return prev.map(t => t.item === item ? { ...t, target: parseInt(targetVal), deadline } : t);
+    return [...prev, { id: Date.now().toString(), item, current: 0, target: parseInt(targetVal), deadline }];
+  });
+  addLog(currentUser.name, 'ตั้งค่าเป้าหมายใหม่', `เป้าหมายสัปดาห์ ${targetWeekName} ${item}: ${targetVal} ชิ้น`);
+};
+
+const handleAddInventoryItem = (e, name, color) => {
+  e.preventDefault();
+  if (!name) return;
+  const existing = inventory.find(i => i.name.toLowerCase() === name.toLowerCase());
+  if (existing) {
+     setInventory(prev => prev.map(i => i.id === existing.id ? {...i, color} : i));
+     addLog(currentUser.name, 'อัปเดตสีไอเทม', `อัปเดตสี ${name}`);
+  } else {
+     setInventory(prev => [...prev, { id: 'i'+Date.now(), name, quantity: 0, color }]);
+     addLog(currentUser.name, 'เพิ่มไอเทมใหม่', `เพิ่ม ${name} เข้าระบบคลัง`);
+  }
+};
+
+// --- SUB-COMPONENTS ---
+  const NavItem = ({ icon: Icon, label, tab }) => (
+    <button
+      onClick={() => { setActiveTab(tab); setIsMobileMenuOpen(false); }}
+      className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+        activeTab === tab 
+          ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]' 
+          : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'
+      }`}
+    >
+      <Icon size={20} />
+      <span className="font-medium text-sm md:text-base">{label}</span>
+    </button>
+  );
+
+  const Card = ({ children, className = "" }) => (
+    <div className={`bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-xl shadow-xl overflow-hidden ${className}`}>
+      {children}
+    </div>
+  );
+
+  const StatusBadge = ({ status }) => {
+    const styles = {
+      Pending: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+      Approved: 'bg-green-500/10 text-green-400 border-green-500/20',
+      Rejected: 'bg-red-500/10 text-red-400 border-red-500/20',
+    };
     
-    <!-- React & ReactDOM -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    
-    <!-- Babel for JSX -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    const displayStatus = {
+      Pending: 'รออนุมัติ',
+      Approved: 'อนุมัติแล้ว',
+      Rejected: 'ปฏิเสธ'
+    };
 
-    <!-- FontAwesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    return (
+      <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${styles[status]}`}>
+        {displayStatus[status]}
+      </span>
+    );
+  };
 
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  // --- VIEWS ---
+  const renderDashboard = () => (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
+        <Card className="p-6 bg-gradient-to-br from-slate-900 to-slate-900/50 relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-4 opacity-20"><DollarSign size={64} className="text-emerald-500" /></div>
+          <h3 className="text-slate-400 text-sm font-semibold uppercase tracking-wider">เงินแก๊ง</h3>
+          <p className="text-4xl font-bold text-white mt-2 drop-shadow-md">{formatMoney(gangMoney)}</p>
+          <div className="mt-4 flex items-center text-sm text-emerald-400">
+            <Activity size={16} className="mr-1" /> การเงินมั่นคง
+          </div>
+        </Card>
+      </div>
 
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Prompt', 'sans-serif'],
-                    },
-                    colors: {
-                        dark: '#121212',
-                        darker: '#0a0a0a',
-                        card: '#1e1e1e',
-                        primary: '#3b82f6',
-                        accent: '#8b5cf6'
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        body { background-color: #0a0a0a; color: #e5e5e5; }
-        .glass-panel {
-            background: rgba(30, 30, 30, 0.7);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-        }
-        .neon-glow:hover {
-            box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
-            border-color: rgba(59, 130, 246, 0.8);
-        }
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #121212; }
-        ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #555; }
-    </style>
-</head>
-<body>
-    <div id="root"></div>
-
-    <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
-
-        // --- MOCK DATA ---
-        const CATEGORIES = [
-            { id: 'gang', name: 'Gang', icon: 'fa-mask' },
-            { id: 'police', name: 'Police', icon: 'fa-shield-halved' },
-            { id: 'ems', name: 'EMS', icon: 'fa-truck-medical' },
-            { id: 'cartel', name: 'Cartel', icon: 'fa-skull' },
-            { id: 'mc', name: 'Motorcycle Club', icon: 'fa-motorcycle' },
-            { id: 'business', name: 'Business', icon: 'fa-briefcase' }
-        ];
-
-        const ROLES = [
-            { id: 'leader', name: 'Leader', color: 'text-yellow-400', bg: 'bg-yellow-400/10', border: 'border-yellow-400/30' },
-            { id: 'co-leader', name: 'Co-Leader', color: 'text-orange-400', bg: 'bg-orange-400/10', border: 'border-orange-400/30' },
-            { id: 'officer', name: 'Officer', color: 'text-blue-400', bg: 'bg-blue-400/10', border: 'border-blue-400/30' },
-            { id: 'member', name: 'Member', color: 'text-gray-300', bg: 'bg-gray-500/10', border: 'border-gray-500/30' }
-        ];
-
-        const INITIAL_GANGS = [
-            { id: 1, name: 'Ballas', category: 'gang', logo: '🟣', desc: 'แก๊งที่คุมโซน Grove Street มีอิทธิพลด้านมืดสูง', warWins: 12, warLosses: 3, rules: 'ห้ามยิงกันเองในแก๊ง, ห้ามปล้นในโซนเซฟ' },
-            { id: 2, name: 'LSPD', category: 'police', logo: '👮', desc: 'กรมตำรวจ Los Santos', warWins: 0, warLosses: 0, rules: 'ปฏิบัติตามกฎหมายอย่างเคร่งครัด' },
-            { id: 3, name: 'Sons of Anarchy', category: 'mc', logo: '🏍️', desc: 'คลับมอเตอร์ไซค์ที่ใหญ่ที่สุด', warWins: 8, warLosses: 5, rules: 'เคารพเสื้อคลับ, ขี่เป็นขบวน' }
-        ];
-
-        const INITIAL_MEMBERS = [
-            { id: 1, name: 'John_Doe', gangId: 1, role: 'leader', joinDate: '2023-01-15', cooldownUntil: null },
-            { id: 2, name: 'Jane_Smith', gangId: 1, role: 'co-leader', joinDate: '2023-02-20', cooldownUntil: null },
-            { id: 3, name: 'Mike_W', gangId: 1, role: 'member', joinDate: '2023-05-10', cooldownUntil: '2026-03-25T12:00:00Z' }, // ติดดีเลย์ออกแก๊ง
-            { id: 4, name: 'Officer_Dan', gangId: 2, role: 'leader', joinDate: '2022-11-01', cooldownUntil: null },
-            { id: 5, name: 'Jax_Teller', gangId: 3, role: 'leader', joinDate: '2023-03-05', cooldownUntil: null }
-        ];
-
-        const INITIAL_BLACKLIST = [
-            { name: 'Toxic_Player01', reason: 'ใช้โปรแกรมช่วยเล่น (Aimbot)', date: '2023-10-01' },
-            { name: 'RDM_Master', reason: 'RDM ต่อเนื่องและก่อกวนเซิร์ฟเวอร์', date: '2023-11-15' }
-        ];
-
-        const SERVER_RULES = [
-            { title: 'ห้าม RDM (Random Deathmatch)', desc: 'ห้ามฆ่าผู้เล่นอื่นโดยไม่มีสตอรี่หรือเหตุผลที่สมควร' },
-            { title: 'ห้าม VDM (Vehicle Deathmatch)', desc: 'ห้ามใช้ยานพาหนะชนผู้เล่นอื่นโดยจงใจเพื่อฆ่า' },
-            { title: 'ห้าม Meta Gaming', desc: 'ห้ามนำข้อมูลนอกเกม (OOC) มาใช้ในเกม (IC) เช่น ดูสตรีมเพื่อหาตำแหน่ง' },
-            { title: 'ห้าม Power Gaming', desc: 'ห้ามกระทำการที่เหนือมนุษย์หรือบังคับบทบาทผู้อื่นโดยไม่ให้โอกาสตอบโต้' },
-            { title: 'กฎการตั้งชื่อ', desc: 'ห้ามตั้งชื่อเลียนแบบสตรีมเมอร์, แอดมิน หรือสมาชิกแก๊งอื่นเพื่อแอบอ้าง' },
-            { title: 'ดีเลย์ออกแก๊ง (Cooldown)', desc: 'เมื่อออกจากแก๊ง จะไม่สามารถเข้าแก๊งใหม่หรือทำอาชีพผิดกฎหมายได้เป็นเวลา 3 วัน (OOC)' }
-        ];
-
-        // --- MAIN APP COMPONENT ---
-        function App() {
-            const [activeTab, setActiveTab] = useState('home');
-            const [selectedCategory, setSelectedCategory] = useState(null);
-            const [selectedGang, setSelectedGang] = useState(null);
-            const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-
-            // State Data
-            const [gangs, setGangs] = useState(INITIAL_GANGS);
-            const [members, setMembers] = useState(INITIAL_MEMBERS);
-            const [blacklist, setBlacklist] = useState(INITIAL_BLACKLIST);
-
-            // Helpers
-            const getGangMembers = (gangId) => members.filter(m => m.gangId === gangId);
-            const getMemberRoleInfo = (roleId) => ROLES.find(r => r.id === roleId) || ROLES[3];
-            const isCooldownActive = (dateString) => {
-                if (!dateString) return false;
-                return new Date(dateString) > new Date();
-            };
-
-            // Navigation Handler
-            const navigate = (tab, data = null) => {
-                setActiveTab(tab);
-                setIsMobileMenuOpen(false);
-                if (tab === 'gangList') setSelectedCategory(data);
-                if (tab === 'gangProfile') setSelectedGang(data);
-                window.scrollTo(0, 0);
-            };
-
-            // --- VIEWS ---
-
-            const HomeView = () => (
-                <div className="space-y-8 animate-fade-in">
-                    <div className="text-center py-10 glass-panel rounded-2xl relative overflow-hidden">
-                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500"></div>
-                        <h1 className="text-4xl md:text-5xl font-bold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
-                            LOS SANTOS DIRECTORY
-                        </h1>
-                        <p className="text-gray-400 text-lg max-w-2xl mx-auto px-4">
-                            ระบบจัดการรายชื่อแก๊งและหน่วยงาน ค้นหาข้อมูล ตรวจสอบสถานะ และอัปเดตข้อมูลแบบเรียลไทม์
-                        </p>
-                    </div>
-
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="p-6">
+          <h3 className="text-xl font-bold text-white mb-6 flex items-center">
+            <Target className="mr-2 text-purple-500" /> ส่งของ {targetWeekName}
+          </h3>
+          <div className="space-y-6">
+            {targets.map(t => {
+              const percent = Math.min(100, Math.round((t.current / t.target) * 100));
+              return (
+                <div key={t.id}>
+                  <div className="flex justify-between text-sm mb-1 items-center">
                     <div>
-                        <h2 className="text-2xl font-semibold mb-6 flex items-center gap-2">
-                            <i className="fa-solid fa-layer-group text-primary"></i> หมวดหมู่ทั้งหมด
-                        </h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {CATEGORIES.map(cat => (
-                                <div 
-                                    key={cat.id} 
-                                    onClick={() => navigate('gangList', cat.id)}
-                                    className="glass-panel p-6 rounded-xl cursor-pointer neon-glow transition-all duration-300 group flex items-center gap-4"
-                                >
-                                    <div className="w-16 h-16 rounded-full bg-dark flex items-center justify-center text-2xl text-primary group-hover:scale-110 transition-transform">
-                                        <i className={`fa-solid ${cat.icon}`}></i>
-                                    </div>
-                                    <div>
-                                        <h3 className="text-xl font-bold">{cat.name}</h3>
-                                        <p className="text-sm text-gray-500">
-                                            {gangs.filter(g => g.category === cat.id).length} สังกัด
-                                        </p>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
+                      <span className="text-slate-200 font-bold text-base" style={{ color: inventory.find(i => i.name === t.item)?.color || '#e2e8f0' }}>{t.item}</span>
+                      <span className="text-xs text-slate-500 ml-2">กำหนด: {formatDateOnly(t.deadline)}</span>
                     </div>
+                    <span className="text-slate-400">
+                      <span className="text-white font-bold">{t.current.toLocaleString()}</span> / {t.target.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden">
+                    <div 
+                      className="bg-gradient-to-r from-purple-600 to-blue-500 h-3 rounded-full transition-all duration-1000 relative shadow-[0_0_10px_rgba(168,85,247,0.5)]"
+                      style={{ width: `${percent}%` }}
+                    ></div>
+                  </div>
                 </div>
-            );
+              )
+            })}
+          </div>
+        </Card>
 
-            const GangListView = () => {
-                const categoryInfo = CATEGORIES.find(c => c.id === selectedCategory);
-                const filteredGangs = gangs.filter(g => g.category === selectedCategory);
-
-                return (
-                    <div className="animate-fade-in">
-                        <button onClick={() => navigate('home')} className="mb-6 text-gray-400 hover:text-white flex items-center gap-2 transition-colors">
-                            <i className="fa-solid fa-arrow-left"></i> กลับไปหน้าหมวดหมู่
-                        </button>
-                        
-                        <h2 className="text-3xl font-bold mb-8 flex items-center gap-3">
-                            <i className={`fa-solid ${categoryInfo?.icon} text-primary`}></i> 
-                            รายชื่อ {categoryInfo?.name}
-                        </h2>
-
-                        {filteredGangs.length === 0 ? (
-                            <div className="text-center py-20 glass-panel rounded-xl text-gray-500">
-                                <i className="fa-solid fa-folder-open text-4xl mb-3 opacity-50"></i>
-                                <p>ยังไม่มีข้อมูลในหมวดหมู่นี้</p>
-                            </div>
-                        ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {filteredGangs.map(gang => {
-                                    const memberCount = getGangMembers(gang.id).length;
-                                    return (
-                                        <div 
-                                            key={gang.id}
-                                            onClick={() => navigate('gangProfile', gang)}
-                                            className="glass-panel rounded-xl overflow-hidden cursor-pointer neon-glow transition-all duration-300 flex flex-col h-full"
-                                        >
-                                            <div className="p-6 flex-grow">
-                                                <div className="flex items-center gap-4 mb-4">
-                                                    <div className="w-16 h-16 rounded-lg bg-dark flex items-center justify-center text-3xl shadow-inner">
-                                                        {gang.logo}
-                                                    </div>
-                                                    <div>
-                                                        <h3 className="text-xl font-bold text-white">{gang.name}</h3>
-                                                        <span className="inline-block px-2 py-1 bg-gray-800 rounded text-xs text-gray-400 mt-1">
-                                                            <i className="fa-solid fa-users mr-1"></i> {memberCount} สมาชิก
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                <p className="text-gray-400 text-sm line-clamp-2">{gang.desc}</p>
-                                            </div>
-                                        </div>
-                                    )
-                                })}
-                            </div>
-                        )}
-                    </div>
-                );
-            };
-
-            const GangProfileView = () => {
-                if (!selectedGang) return null;
-                const gangMembers = getGangMembers(selectedGang.id);
-                
-                // เรียงลำดับตามตำแหน่ง
-                const sortedMembers = [...gangMembers].sort((a, b) => {
-                    const roleOrder = { 'leader': 1, 'co-leader': 2, 'officer': 3, 'member': 4 };
-                    return roleOrder[a.role] - roleOrder[b.role];
-                });
-
-                return (
-                    <div className="animate-fade-in space-y-6">
-                        <button onClick={() => navigate('gangList', selectedGang.category)} className="text-gray-400 hover:text-white flex items-center gap-2">
-                            <i className="fa-solid fa-arrow-left"></i> ย้อนกลับ
-                        </button>
-
-                        <div className="glass-panel rounded-2xl p-6 md:p-10 flex flex-col md:flex-row gap-8 items-start relative overflow-hidden">
-                            <div className="w-32 h-32 md:w-48 md:h-48 flex-shrink-0 bg-dark rounded-2xl flex items-center justify-center text-6xl shadow-xl border border-gray-700 z-10">
-                                {selectedGang.logo}
-                            </div>
-                            <div className="z-10 flex-grow">
-                                <h1 className="text-4xl md:text-5xl font-bold mb-2">{selectedGang.name}</h1>
-                                <div className="flex flex-wrap gap-3 mb-4">
-                                    <span className="px-3 py-1 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-full text-sm">
-                                        หมวดหมู่: {CATEGORIES.find(c => c.id === selectedGang.category)?.name}
-                                    </span>
-                                    <span className="px-3 py-1 bg-gray-800 text-gray-300 rounded-full text-sm">
-                                        สมาชิกทั้งหมด: {gangMembers.length} คน
-                                    </span>
-                                </div>
-                                <p className="text-gray-400 leading-relaxed mb-6">{selectedGang.desc}</p>
-                                
-                                {selectedGang.category === 'gang' || selectedGang.category === 'mc' || selectedGang.category === 'cartel' ? (
-                                    <div className="flex gap-4 p-4 bg-dark rounded-xl w-fit border border-gray-800">
-                                        <div className="text-center px-4 border-r border-gray-700">
-                                            <div className="text-2xl font-bold text-green-500">{selectedGang.warWins}</div>
-                                            <div className="text-xs text-gray-500">War Wins</div>
-                                        </div>
-                                        <div className="text-center px-4">
-                                            <div className="text-2xl font-bold text-red-500">{selectedGang.warLosses}</div>
-                                            <div className="text-xs text-gray-500">War Losses</div>
-                                        </div>
-                                    </div>
-                                ): null}
-                            </div>
-                            
-                            {/* Decorative background element */}
-                            <div className="absolute top-0 right-0 w-64 h-64 bg-primary rounded-full filter blur-[100px] opacity-10 pointer-events-none"></div>
-                        </div>
-
-                        {/* กฎของแก๊ง (ถ้ามี) */}
-                        {selectedGang.rules && (
-                            <div className="glass-panel rounded-xl p-6 border-l-4 border-l-primary">
-                                <h3 className="text-xl font-bold mb-2 flex items-center gap-2">
-                                    <i className="fa-solid fa-scroll text-primary"></i> กฎประจำสังกัด
-                                </h3>
-                                <p className="text-gray-300">{selectedGang.rules}</p>
-                            </div>
-                        )}
-
-                        {/* รายชื่อสมาชิก */}
-                        <div>
-                            <h3 className="text-2xl font-bold mb-4 flex items-center gap-2">
-                                <i className="fa-solid fa-users-viewfinder text-primary"></i> รายชื่อสมาชิก
-                            </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {sortedMembers.map(member => {
-                                    const roleInfo = getMemberRoleInfo(member.role);
-                                    const onCooldown = isCooldownActive(member.cooldownUntil);
-                                    
-                                    return (
-                                        <div key={member.id} className="glass-panel p-4 rounded-xl flex items-center justify-between group hover:bg-white/5 transition-colors">
-                                            <div className="flex items-center gap-4">
-                                                <div className="w-10 h-10 rounded-full bg-dark flex items-center justify-center text-gray-400">
-                                                    <i className="fa-solid fa-user"></i>
-                                                </div>
-                                                <div>
-                                                    <div className="font-semibold text-white flex items-center gap-2">
-                                                        {member.name}
-                                                        {onCooldown && (
-                                                            <span title={`ติดดีเลย์ถึง ${new Date(member.cooldownUntil).toLocaleDateString('th-TH')}`} className="text-red-500 text-xs flex items-center">
-                                                                <i className="fa-solid fa-clock mr-1"></i> ดีเลย์
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <div className={`text-xs px-2 py-0.5 mt-1 rounded-md inline-block border ${roleInfo.color} ${roleInfo.bg} ${roleInfo.border}`}>
-                                                        {roleInfo.name}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )
-                                })}
-                            </div>
-                        </div>
-                    </div>
-                );
-            };
-
-            const SearchView = () => {
-                const [searchTerm, setSearchTerm] = useState('');
-                
-                const searchResults = useMemo(() => {
-                    if (!searchTerm.trim()) return [];
-                    const term = searchTerm.toLowerCase();
-                    return members.filter(m => m.name.toLowerCase().includes(term));
-                }, [searchTerm, members]);
-
-                const blacklistResults = useMemo(() => {
-                    if (!searchTerm.trim()) return [];
-                    const term = searchTerm.toLowerCase();
-                    return blacklist.filter(b => b.name.toLowerCase().includes(term));
-                }, [searchTerm, blacklist]);
-
-                return (
-                    <div className="animate-fade-in max-w-4xl mx-auto space-y-6">
-                        <div className="text-center py-8">
-                            <h2 className="text-3xl font-bold mb-2">ตรวจสอบรายชื่อผู้เล่น</h2>
-                            <p className="text-gray-400">ค้นหาประวัติการอยู่แก๊ง, การติดดีเลย์ หรือสถานะแบล็คลิสต์ ป้องกันการแอบอ้าง</p>
-                        </div>
-
-                        <div className="relative">
-                            <input 
-                                type="text" 
-                                placeholder="พิมพ์ชื่อผู้เล่นที่ต้องการค้นหา (เช่น John_Doe)..." 
-                                className="w-full bg-dark border border-gray-700 rounded-xl px-6 py-4 pl-14 text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-lg shadow-lg"
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                            />
-                            <i className="fa-solid fa-magnifying-glass absolute left-6 top-5 text-gray-400 text-xl"></i>
-                        </div>
-
-                        {searchTerm && (
-                            <div className="space-y-4">
-                                {/* ผลการค้นหาในแบล็คลิสต์ (สำคัญสุด) */}
-                                {blacklistResults.length > 0 && (
-                                    <div className="glass-panel border-red-500/50 rounded-xl p-6 bg-red-900/10">
-                                        <h3 className="text-xl font-bold text-red-400 mb-4 flex items-center gap-2">
-                                            <i className="fa-solid fa-triangle-exclamation"></i> พบในรายชื่อ Blacklist!
-                                        </h3>
-                                        {blacklistResults.map((b, idx) => (
-                                            <div key={idx} className="bg-dark p-4 rounded-lg border border-red-500/30 mb-2 last:mb-0">
-                                                <div className="font-bold text-lg text-white">{b.name}</div>
-                                                <div className="text-red-400 text-sm mt-1">สาเหตุ: {b.reason}</div>
-                                                <div className="text-gray-500 text-xs mt-2">วันที่เพิ่ม: {b.date}</div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-
-                                {/* ผลการค้นหาผู้เล่นปกติ */}
-                                {searchResults.length > 0 ? (
-                                    <div className="glass-panel rounded-xl overflow-hidden">
-                                        <div className="p-4 bg-white/5 border-b border-white/5 font-semibold">
-                                            พบข้อมูลผู้เล่น ({searchResults.length} รายการ)
-                                        </div>
-                                        <div className="divide-y divide-white/5">
-                                            {searchResults.map(member => {
-                                                const gang = gangs.find(g => g.id === member.gangId);
-                                                const onCooldown = isCooldownActive(member.cooldownUntil);
-                                                return (
-                                                    <div key={member.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                                        <div>
-                                                            <div className="font-bold text-lg text-white">{member.name}</div>
-                                                            <div className="text-sm text-gray-400 mt-1 flex items-center gap-2">
-                                                                สังกัด: <span className="text-primary">{gang ? gang.name : 'ไม่มีสังกัด'}</span>
-                                                                <span className="text-xs px-2 py-0.5 bg-gray-800 rounded">{getMemberRoleInfo(member.role).name}</span>
-                                                            </div>
-                                                        </div>
-                                                        <div className="text-right">
-                                                            {onCooldown ? (
-                                                                <div className="text-red-400 bg-red-400/10 px-3 py-2 rounded-lg border border-red-400/20 text-sm flex items-center gap-2">
-                                                                    <i className="fa-solid fa-clock"></i> ติดดีเลย์ถึง {new Date(member.cooldownUntil).toLocaleDateString('th-TH')}
-                                                                </div>
-                                                            ) : (
-                                                                <div className="text-green-400 bg-green-400/10 px-3 py-2 rounded-lg border border-green-400/20 text-sm flex items-center gap-2">
-                                                                    <i className="fa-solid fa-check-circle"></i> สถานะปกติ
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                )
-                                            })}
-                                        </div>
-                                    </div>
-                                ) : (
-                                    searchTerm && blacklistResults.length === 0 && (
-                                        <div className="text-center py-10 glass-panel rounded-xl text-gray-400">
-                                            ไม่พบข้อมูลผู้เล่นชื่อ "{searchTerm}" ในระบบ (สามารถรับเข้าแก๊งได้)
-                                        </div>
-                                    )
-                                )}
-                            </div>
-                        )}
-                    </div>
-                );
-            };
-
-            const RulesView = () => (
-                <div className="animate-fade-in max-w-4xl mx-auto">
-                    <div className="text-center mb-10">
-                        <h2 className="text-3xl font-bold mb-2 flex justify-center items-center gap-3">
-                            <i className="fa-solid fa-book-open text-primary"></i> กฎหมายของเมือง (Server Rules)
-                        </h2>
-                        <p className="text-gray-400">โปรดอ่านและทำความเข้าใจเพื่อการเล่นร่วมกันอย่างมีความสุข</p>
-                    </div>
-
-                    <div className="space-y-4">
-                        {SERVER_RULES.map((rule, idx) => (
-                            <div key={idx} className="glass-panel p-6 rounded-xl flex gap-4 items-start">
-                                <div className="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center flex-shrink-0 font-bold border border-primary/30">
-                                    {idx + 1}
-                                </div>
-                                <div>
-                                    <h3 className="text-xl font-bold text-white mb-2">{rule.title}</h3>
-                                    <p className="text-gray-400 leading-relaxed">{rule.desc}</p>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+        <Card className="p-6">
+          <h3 className="text-xl font-bold text-white mb-6 flex items-center">
+            <Activity className="mr-2 text-blue-500" /> กิจกรรมล่าสุด
+          </h3>
+          <div className="space-y-4">
+            {logs.slice(0, 5).map(log => (
+              <div key={log.id} className="flex items-start space-x-3 pb-4 border-b border-slate-800/50 last:border-0 last:pb-0">
+                <div className="bg-slate-800 p-2 rounded-lg mt-1">
+                  <Clock size={16} className="text-slate-400" />
                 </div>
-            );
-
-            const TopGangView = () => {
-                // เรียงลำดับแก๊งตามจำนวนสมาชิก (จำลองความนิยม)
-                const sortedGangs = [...gangs].map(g => ({
-                    ...g,
-                    memberCount: getGangMembers(g.id).length
-                })).sort((a, b) => b.memberCount - a.memberCount);
-
-                return (
-                    <div className="animate-fade-in max-w-5xl mx-auto">
-                        <div className="text-center mb-10">
-                            <h2 className="text-3xl font-bold mb-2 flex justify-center items-center gap-3">
-                                <i className="fa-solid fa-trophy text-yellow-400"></i> Top Ranking
-                            </h2>
-                            <p className="text-gray-400">จัดอันดับสังกัดที่มีจำนวนสมาชิกและการเคลื่อนไหวมากที่สุด</p>
-                        </div>
-
-                        <div className="glass-panel rounded-2xl overflow-hidden">
-                            <table className="w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-white/5 border-b border-white/5 text-gray-400 text-sm uppercase tracking-wider">
-                                        <th className="p-4 w-16 text-center">อันดับ</th>
-                                        <th className="p-4">ชื่อสังกัด</th>
-                                        <th className="p-4">หมวดหมู่</th>
-                                        <th className="p-4 text-center">จำนวนสมาชิก</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-white/5">
-                                    {sortedGangs.map((gang, idx) => (
-                                        <tr key={gang.id} className="hover:bg-white/5 transition-colors group cursor-pointer" onClick={() => navigate('gangProfile', gang)}>
-                                            <td className="p-4 text-center font-bold text-lg">
-                                                {idx === 0 ? <i className="fa-solid fa-crown text-yellow-400"></i> :
-                                                 idx === 1 ? <i className="fa-solid fa-medal text-gray-300"></i> :
-                                                 idx === 2 ? <i className="fa-solid fa-medal text-amber-600"></i> :
-                                                 <span className="text-gray-500">{idx + 1}</span>}
-                                            </td>
-                                            <td className="p-4 flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded bg-dark flex items-center justify-center text-xl">{gang.logo}</div>
-                                                <span className="font-bold text-white group-hover:text-primary transition-colors">{gang.name}</span>
-                                            </td>
-                                            <td className="p-4 text-gray-400">
-                                                <span className="px-2 py-1 bg-gray-800 rounded text-xs">
-                                                    {CATEGORIES.find(c => c.id === gang.category)?.name}
-                                                </span>
-                                            </td>
-                                            <td className="p-4 text-center">
-                                                <span className="font-bold text-white bg-white/10 px-3 py-1 rounded-full">
-                                                    {gang.memberCount}
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                );
-            };
-
-            // --- ADMIN PANEL (Mock Frontend Logic) ---
-            const AdminPanelView = () => {
-                const [adminTab, setAdminTab] = useState('members');
-                const [message, setMessage] = useState({ type: '', text: '' });
-
-                // Form States
-                const [newMemberName, setNewMemberName] = useState('');
-                const [selectedGangForMember, setSelectedGangForMember] = useState(gangs[0]?.id || '');
-                const [selectedRole, setSelectedRole] = useState('member');
-
-                const showMessage = (type, text) => {
-                    setMessage({ type, text });
-                    setTimeout(() => setMessage({ type: '', text: '' }), 3000);
-                };
-
-                const handleAddMember = (e) => {
-                    e.preventDefault();
-                    const nameTrimmed = newMemberName.trim();
-                    
-                    if (!nameTrimmed) return;
-
-                    // 1. Check if name exists
-                    const nameExists = members.some(m => m.name.toLowerCase() === nameTrimmed.toLowerCase());
-                    if (nameExists) {
-                        showMessage('error', `ชื่อ ${nameTrimmed} มีอยู่ในระบบแล้ว! ป้องกันการซ้ำซ้อน`);
-                        return;
-                    }
-
-                    // 2. Check Blacklist
-                    const isBlacklisted = blacklist.some(b => b.name.toLowerCase() === nameTrimmed.toLowerCase());
-                    if (isBlacklisted) {
-                        showMessage('error', `ผู้เล่น ${nameTrimmed} อยู่ใน Blacklist ไม่สามารถเพิ่มได้`);
-                        return;
-                    }
-
-                    // Add to state
-                    const newMember = {
-                        id: Date.now(),
-                        name: nameTrimmed,
-                        gangId: parseInt(selectedGangForMember),
-                        role: selectedRole,
-                        joinDate: new Date().toISOString().split('T')[0],
-                        cooldownUntil: null
-                    };
-
-                    setMembers([...members, newMember]);
-                    showMessage('success', `เพิ่มผู้เล่น ${nameTrimmed} เข้าสู่ระบบสำเร็จ`);
-                    setNewMemberName('');
-                };
-
-                const handleKickMember = (memberId, name) => {
-                    if (confirm(`คุณแน่ใจหรือไม่ที่จะเตะ ${name} ออกจากแก๊ง? (จะติดดีเลย์ 3 วัน)`)) {
-                        // จำลองการตั้งดีเลย์ 3 วัน
-                        const cooldownDate = new Date();
-                        cooldownDate.setDate(cooldownDate.getDate() + 3);
-                        
-                        setMembers(members.map(m => 
-                            m.id === memberId 
-                            ? { ...m, gangId: null, cooldownUntil: cooldownDate.toISOString() } 
-                            : m
-                        ));
-                        showMessage('success', `นำ ${name} ออกจากสังกัดและตั้งดีเลย์ 3 วันเรียบร้อยแล้ว`);
-                    }
-                };
-
-                return (
-                    <div className="animate-fade-in">
-                        <div className="flex flex-col md:flex-row items-center justify-between mb-8 gap-4">
-                            <div>
-                                <h2 className="text-3xl font-bold flex items-center gap-3">
-                                    <i className="fa-solid fa-shield-halved text-red-500"></i> Admin Control Panel
-                                </h2>
-                                <p className="text-gray-400 mt-1">ระบบจัดการหลังบ้าน อัปเดตข้อมูล Real-time</p>
-                            </div>
-                            <div className="bg-dark p-1 rounded-xl flex gap-1 border border-gray-800">
-                                <button onClick={() => setAdminTab('members')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${adminTab === 'members' ? 'bg-primary text-white' : 'text-gray-400 hover:text-white'}`}>จัดการสมาชิก</button>
-                                <button onClick={() => setAdminTab('gangs')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${adminTab === 'gangs' ? 'bg-primary text-white' : 'text-gray-400 hover:text-white'}`}>จัดการแก๊ง</button>
-                            </div>
-                        </div>
-
-                        {message.text && (
-                            <div className={`p-4 rounded-xl mb-6 flex items-center gap-3 animate-fade-in ${message.type === 'error' ? 'bg-red-500/10 border border-red-500/30 text-red-400' : 'bg-green-500/10 border border-green-500/30 text-green-400'}`}>
-                                <i className={`fa-solid ${message.type === 'error' ? 'fa-circle-exclamation' : 'fa-circle-check'}`}></i>
-                                {message.text}
-                            </div>
-                        )}
-
-                        {adminTab === 'members' && (
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                {/* Form Add Member */}
-                                <div className="glass-panel p-6 rounded-xl h-fit border-t-4 border-t-primary">
-                                    <h3 className="text-xl font-bold mb-4">เพิ่มสมาชิกใหม่</h3>
-                                    <form onSubmit={handleAddMember} className="space-y-4">
-                                        <div>
-                                            <label className="block text-sm text-gray-400 mb-1">ชื่อผู้เล่น (In-game Name)</label>
-                                            <input 
-                                                type="text" 
-                                                required
-                                                value={newMemberName}
-                                                onChange={(e) => setNewMemberName(e.target.value)}
-                                                className="w-full bg-dark border border-gray-700 rounded-lg px-4 py-2 text-white focus:border-primary focus:outline-none"
-                                                placeholder="เช่น Somchai_B"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm text-gray-400 mb-1">เลือกสังกัด</label>
-                                            <select 
-                                                value={selectedGangForMember}
-                                                onChange={(e) => setSelectedGangForMember(e.target.value)}
-                                                className="w-full bg-dark border border-gray-700 rounded-lg px-4 py-2 text-white focus:border-primary focus:outline-none"
-                                            >
-                                                {gangs.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm text-gray-400 mb-1">ตำแหน่ง</label>
-                                            <select 
-                                                value={selectedRole}
-                                                onChange={(e) => setSelectedRole(e.target.value)}
-                                                className="w-full bg-dark border border-gray-700 rounded-lg px-4 py-2 text-white focus:border-primary focus:outline-none"
-                                            >
-                                                {ROLES.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                                            </select>
-                                        </div>
-                                        <button type="submit" className="w-full bg-primary hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors flex justify-center items-center gap-2">
-                                            <i className="fa-solid fa-plus"></i> เพิ่มเข้าสู่ระบบ
-                                        </button>
-                                    </form>
-                                </div>
-
-                                {/* List Members */}
-                                <div className="lg:col-span-2 glass-panel p-6 rounded-xl">
-                                    <h3 className="text-xl font-bold mb-4">รายชื่อสมาชิกล่าสุด (สามารถแก้ไข/ลบได้)</h3>
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-left text-sm">
-                                            <thead>
-                                                <tr className="border-b border-gray-700 text-gray-400">
-                                                    <th className="pb-3 pr-4">ชื่อ</th>
-                                                    <th className="pb-3 px-4">สังกัด</th>
-                                                    <th className="pb-3 px-4">ตำแหน่ง</th>
-                                                    <th className="pb-3 px-4">สถานะ</th>
-                                                    <th className="pb-3 pl-4 text-right">จัดการ</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-800">
-                                                {members.slice().reverse().slice(0, 10).map(member => {
-                                                    const gang = gangs.find(g => g.id === member.gangId);
-                                                    const onCooldown = isCooldownActive(member.cooldownUntil);
-                                                    return (
-                                                        <tr key={member.id} className="hover:bg-white/5">
-                                                            <td className="py-3 pr-4 font-medium text-white">{member.name}</td>
-                                                            <td className="py-3 px-4 text-gray-400">{gang ? gang.name : '-'}</td>
-                                                            <td className="py-3 px-4">
-                                                                <span className="text-xs px-2 py-1 bg-gray-800 rounded text-gray-300">
-                                                                    {getMemberRoleInfo(member.role).name}
-                                                                </span>
-                                                            </td>
-                                                            <td className="py-3 px-4">
-                                                                {onCooldown ? 
-                                                                    <span className="text-red-400 text-xs"><i className="fa-solid fa-clock"></i> ติดดีเลย์</span> : 
-                                                                    <span className="text-green-400 text-xs"><i className="fa-solid fa-check"></i> ปกติ</span>
-                                                                }
-                                                            </td>
-                                                            <td className="py-3 pl-4 text-right">
-                                                                {gang && (
-                                                                    <button 
-                                                                        onClick={() => handleKickMember(member.id, member.name)}
-                                                                        className="text-red-400 hover:text-red-300 bg-red-400/10 px-2 py-1 rounded text-xs transition-colors"
-                                                                        title="เตะออกและติดดีเลย์"
-                                                                    >
-                                                                        Kick
-                                                                    </button>
-                                                                )}
-                                                            </td>
-                                                        </tr>
-                                                    )
-                                                })}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                    <p className="text-xs text-gray-500 mt-4">* แสดงเฉพาะ 10 รายการล่าสุด เพื่อการสาธิตระบบ</p>
-                                </div>
-                            </div>
-                        )}
-
-                        {adminTab === 'gangs' && (
-                            <div className="glass-panel p-10 rounded-xl text-center text-gray-400">
-                                <i className="fa-solid fa-person-digging text-4xl mb-4 text-gray-600"></i>
-                                <h3 className="text-xl text-white mb-2">ระบบจัดการแก๊ง (อยู่ระหว่างพัฒนา)</h3>
-                                <p>ในส่วนนี้จะใช้สำหรับ เพิ่มแก๊งใหม่, อัปโหลดโลโก้, แก้ไขกฎแก๊ง, และลบแก๊ง</p>
-                            </div>
-                        )}
-                    </div>
-                );
-            };
-
-            // --- RENDER ---
-            return (
-                <div className="min-h-screen flex flex-col md:flex-row bg-darker font-sans text-gray-200">
-                    
-                    {/* Mobile Header & Toggle */}
-                    <div className="md:hidden flex items-center justify-between p-4 bg-card border-b border-white/5 sticky top-0 z-50">
-                        <div className="font-bold text-xl text-white flex items-center gap-2">
-                            <i className="fa-solid fa-city text-primary"></i> LS Directory
-                        </div>
-                        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-2xl text-gray-400 focus:outline-none">
-                            <i className={`fa-solid ${isMobileMenuOpen ? 'fa-xmark' : 'fa-bars'}`}></i>
-                        </button>
-                    </div>
-
-                    {/* Sidebar Navigation */}
-                    <nav className={`${isMobileMenuOpen ? 'block' : 'hidden'} md:block w-full md:w-64 flex-shrink-0 bg-card border-r border-white/5 md:h-screen md:sticky md:top-0 z-40 overflow-y-auto`}>
-                        <div className="p-6 hidden md:block">
-                            <div className="font-bold text-2xl text-white flex items-center gap-3">
-                                <div className="w-8 h-8 rounded bg-primary flex items-center justify-center text-sm shadow-lg shadow-primary/30">
-                                    <i className="fa-solid fa-city"></i>
-                                </div>
-                                LS Directory
-                            </div>
-                            <p className="text-xs text-gray-500 mt-2">FiveM Management System</p>
-                        </div>
-
-                        <div className="px-4 pb-6 space-y-1 mt-4 md:mt-0">
-                            <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-3">Main Menu</div>
-                            {[
-                                { id: 'home', icon: 'fa-house', label: 'หน้าแรก' },
-                                { id: 'search', icon: 'fa-magnifying-glass', label: 'ค้นหาผู้เล่น' },
-                                { id: 'topGang', icon: 'fa-chart-simple', label: 'จัดอันดับแก๊ง' },
-                                { id: 'rules', icon: 'fa-book', label: 'กฎหมายเมือง' }
-                            ].map(item => (
-                                <button 
-                                    key={item.id}
-                                    onClick={() => navigate(item.id)}
-                                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === item.id || (item.id==='home' && (activeTab==='gangList' || activeTab==='gangProfile')) ? 'bg-primary/10 text-primary font-medium border border-primary/20' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}
-                                >
-                                    <i className={`fa-solid ${item.icon} w-5 text-center`}></i> {item.label}
-                                </button>
-                            ))}
-
-                            <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-3 mt-8">System</div>
-                            <button 
-                                onClick={() => navigate('admin')}
-                                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${activeTab === 'admin' ? 'bg-red-500/10 text-red-500 font-medium border border-red-500/20' : 'text-gray-400 hover:bg-red-500/5 hover:text-red-400'}`}
-                            >
-                                <div className="flex items-center gap-3">
-                                    <i className="fa-solid fa-gear w-5 text-center"></i> Admin Panel
-                                </div>
-                                <i className="fa-solid fa-lock text-xs opacity-50"></i>
-                            </button>
-                        </div>
-                    </nav>
-
-                    {/* Main Content Area */}
-                    <main className="flex-grow p-4 md:p-8 lg:p-12 overflow-x-hidden">
-                        {activeTab === 'home' && <HomeView />}
-                        {activeTab === 'gangList' && <GangListView />}
-                        {activeTab === 'gangProfile' && <GangProfileView />}
-                        {activeTab === 'search' && <SearchView />}
-                        {activeTab === 'rules' && <RulesView />}
-                        {activeTab === 'topGang' && <TopGangView />}
-                        {activeTab === 'admin' && <AdminPanelView />}
-                    </main>
-
+                <div>
+                  <p className="text-sm text-slate-200">
+                    <span className="font-semibold text-purple-400">{log.user}</span> {log.details}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">{formatDate(log.date)}</p>
                 </div>
-            );
-        }
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
+  const renderInventory = () => {
+    const [newItemName, setNewItemName] = useState('');
+    const [newItemColor, setNewItemColor] = useState('#a855f7');
 
-    <style>
-        /* CSS Animations */
-        .animate-fade-in {
-            animation: fadeIn 0.4s ease-out forwards;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-    </style>
-</body>
-</html>
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-end">
+          <div>
+            <h2 className="text-2xl font-bold text-white">คลังของแก๊ง</h2>
+            <p className="text-slate-400 text-sm mt-1">ของส่วนกลางทั้งหมดที่ Admin ต้องดูแล</p>
+          </div>
+        </div>
+        
+        {isAdmin && (
+          <Card className="p-6">
+            <h3 className="text-lg font-bold text-white mb-4">เพิ่ม / แก้ไขสีไอเทมในคลัง</h3>
+            <form onSubmit={(e) => { handleAddInventoryItem(e, newItemName, newItemColor); setNewItemName(''); }} className="flex flex-col md:flex-row gap-4">
+              <input 
+                type="text" required value={newItemName} onChange={(e) => setNewItemName(e.target.value)}
+                placeholder="ชื่อไอเทม..."
+                className="flex-1 bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 focus:outline-none focus:border-purple-500"
+              />
+              <div className="flex items-center gap-3 bg-slate-950 border border-slate-800 rounded-lg px-3">
+                <label className="text-sm text-slate-400">สีไอเทม:</label>
+                <input 
+                  type="color" value={newItemColor} onChange={(e) => setNewItemColor(e.target.value)}
+                  className="w-8 h-8 rounded cursor-pointer bg-transparent border-none"
+                />
+              </div>
+              <button type="submit" className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-6 rounded-lg transition-all whitespace-nowrap">
+                บันทึกไอเทม
+              </button>
+            </form>
+          </Card>
+        )}
+
+        <Card className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-800/50 text-slate-400 text-sm uppercase tracking-wider border-b border-slate-700">
+                <th className="p-4 font-medium">ชื่อของ</th>
+                <th className="p-4 font-medium">จำนวน</th>
+                <th className="p-4 font-medium">หมวดหมู่</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/50">
+              {inventory.map(item => (
+                <tr key={item.id} className="hover:bg-slate-800/30 transition-colors">
+                  <td className="p-4 flex items-center font-bold text-base" style={{ color: item.color || '#e2e8f0' }}>
+                    <Package size={16} className="mr-3 opacity-70" /> {item.name}
+                  </td>
+                  <td className="p-4 font-bold text-purple-400">{item.quantity.toLocaleString()}</td>
+                  <td className="p-4 text-slate-500 text-sm">ไอเทมทั่วไป</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+
+        <h2 className="text-2xl font-bold text-white mt-8 mb-4">ของที่สมาชิกกำลังถืออยู่</h2>
+        <Card className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-800/50 text-slate-400 text-sm uppercase tracking-wider border-b border-slate-700">
+                <th className="p-4 font-medium">ชื่อสมาชิก</th>
+                <th className="p-4 font-medium">ของที่ถืออยู่</th>
+                <th className="p-4 font-medium">จำนวน</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/50">
+              {heldItems.length === 0 && <tr><td colSpan="3" className="p-4 text-center text-slate-500">ไม่มีสมาชิกคนไหนถือของอยู่</td></tr>}
+              {heldItems.map(held => {
+                const user = users.find(u => u.id === held.userId);
+                const itemData = inventory.find(i => i.name === held.item);
+                return (
+                  <tr key={held.id} className="hover:bg-slate-800/30 transition-colors">
+                    <td className="p-4 text-slate-200 flex items-center font-medium">
+                      <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center mr-3 font-bold text-xs">
+                        {user?.name.charAt(0)}
+                      </div>
+                      {user?.name || 'ไม่ทราบชื่อ'}
+                    </td>
+                    <td className="p-4 font-bold" style={{ color: itemData?.color || '#e2e8f0' }}>{held.item}</td>
+                    <td className="p-4 font-bold text-purple-400">{held.quantity.toLocaleString()}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </Card>
+      </div>
+    );
+  };
+
+  const renderRequests = () => {
+    const [reqType, setReqType] = useState('ส่งของ');
+    const [reqItem, setReqItem] = useState('เหล็ก');
+    const [reqAmount, setReqAmount] = useState('');
+    const [reqNote, setReqNote] = useState('');
+
+    const displayRequests = isAdmin ? requests : requests.filter(r => r.userId === currentUser.id);
+
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* ฟอร์มสร้างคำร้อง */}
+        <div className="lg:col-span-1">
+          <Card className="p-6 sticky top-6">
+            <h3 className="text-xl font-bold text-white mb-6">สร้างคำร้องใหม่</h3>
+            <form onSubmit={(e) => { handleRequestSubmit(e, reqType, reqItem, reqAmount, reqNote); setReqAmount(''); setReqNote(''); }} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">ประเภท</label>
+                <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
+                  {['ส่งของ', 'เบิกของ'].map(t => (
+                    <button
+                      type="button"
+                      key={t}
+                      onClick={() => setReqType(t)}
+                      className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${reqType === t ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">เลือกของ</label>
+                <select 
+                  value={reqItem} onChange={(e) => setReqItem(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all font-medium"
+                >
+                  <option value="เงิน">เงิน</option>
+                  {inventory.map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">จำนวน</label>
+                <input 
+                  type="number" min="1" required value={reqAmount} onChange={(e) => setReqAmount(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all"
+                  placeholder="เช่น 50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">เหตุผล / หมายเหตุ</label>
+                <textarea 
+                  required value={reqNote} onChange={(e) => setReqNote(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 h-24 resize-none focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all text-sm"
+                  placeholder="ทำไมถึงต้องการเบิก หรือได้ของมาจากไหน?"
+                ></textarea>
+              </div>
+
+              <button type="submit" className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-4 rounded-lg transition-all shadow-[0_0_15px_rgba(168,85,247,0.3)] hover:shadow-[0_0_25px_rgba(168,85,247,0.5)] flex justify-center items-center">
+                <Send size={18} className="mr-2" /> ยืนยันทำรายการ
+              </button>
+            </form>
+          </Card>
+        </div>
+
+        {/* รายการคำร้อง */}
+        <div className="lg:col-span-2">
+          <Card className="overflow-hidden">
+            <div className="p-6 border-b border-slate-800 bg-slate-800/20 flex justify-between items-center">
+              <h3 className="text-xl font-bold text-white">{isAdmin ? 'ประวัติคำร้องทั้งหมด' : 'คำร้องของฉัน'}</h3>
+            </div>
+            <div className="divide-y divide-slate-800/50 max-h-[70vh] overflow-y-auto">
+              {displayRequests.length === 0 && <p className="p-6 text-slate-500 text-center">ยังไม่มีประวัติทำรายการ</p>}
+              {displayRequests.map(req => {
+                const user = users.find(u => u.id === req.userId);
+                return (
+                  <div key={req.id} className="p-6 hover:bg-slate-800/20 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex items-start space-x-4">
+                      <div className={`p-3 rounded-full mt-1 ${req.type === 'ส่งของ' ? 'bg-green-500/10 text-green-500' : 'bg-blue-500/10 text-blue-500'}`}>
+                        <ArrowRightLeft size={20} />
+                      </div>
+                      <div>
+                        <div className="flex items-center space-x-3 mb-1">
+                          <span className="font-bold text-slate-200">{user?.name}</span>
+                          <span className="text-slate-500 text-sm">ขอ{req.type}</span>
+                    </div>
+                    <p className="text-lg text-white font-bold">{req.item} <span className="text-purple-400">x{req.amount}</span></p>
+                    <p className="text-sm text-slate-400 mt-1 bg-slate-900/50 p-2 rounded border border-slate-800">"{req.note}"</p>
+                    <p className="text-xs text-slate-500 mt-2">{formatDate(req.date)}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col items-end space-y-3">
+                      <StatusBadge status={req.status} />
+                      {isAdmin && req.status === 'Pending' && (
+                        <div className="flex space-x-2 mt-2">
+                          <button onClick={() => handleApproveRequest(req)} className="px-3 py-1.5 text-sm font-medium bg-green-500/20 hover:bg-green-500/40 text-green-400 rounded-lg transition-colors flex items-center" title="อนุมัติ">
+                            <Check size={16} className="mr-1" /> ยืนยัน
+                          </button>
+                          <button onClick={() => handleRejectRequest(req)} className="px-3 py-1.5 text-sm font-medium bg-red-500/20 hover:bg-red-500/40 text-red-400 rounded-lg transition-colors flex items-center" title="ปฏิเสธ">
+                            <XCircle size={16} className="mr-1" /> ปฏิเสธ
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  };
+
+  const renderMembers = () => (
+    <div className="space-y-6">
+      <Card className="overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="bg-slate-800/50 text-slate-400 text-sm uppercase tracking-wider border-b border-slate-700">
+              <th className="p-4 font-medium">ชื่อ</th>
+              <th className="p-4 font-medium">ยศ (Rank)</th>
+              <th className="p-4 font-medium">วันที่เข้าแก๊ง</th>
+              <th className="p-4 font-medium text-right">ส่งของเข้า</th>
+              <th className="p-4 font-medium text-right">เบิกของออก</th>
+              {isLeader && <th className="p-4 font-medium text-center">จัดการ</th>}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800/50">
+            {users.map(u => (
+              <tr key={u.id} className="hover:bg-slate-800/30 transition-colors">
+                <td className="p-4">
+              <span className={`px-2.5 py-1 text-xs font-semibold rounded-full border ${
+                u.role === 'Leader' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
+                u.role === 'Admin' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                'bg-slate-700/50 text-slate-300 border-slate-600'
+              }`}>
+                {u.role}
+              </span>
+            </td>
+            <td className="p-4 text-slate-400 text-sm">{new Date(u.joinDate).toLocaleDateString('th-TH')}</td>
+            <td className="p-4 text-right text-green-400 font-bold">+{u.contributed}</td>
+            <td className="p-4 text-right text-red-400 font-bold">-{u.withdrawn}</td>
+            {isLeader && (
+              <td className="p-4 text-center">
+                    <button className="text-slate-500 hover:text-red-400 transition-colors" title="เตะออก (ระบบจำลอง)">
+                      <XCircle size={18} className="mx-auto" />
+                    </button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+    </div>
+  );
+
+  const renderLogs = () => {
+    const [searchTerm, setSearchTerm] = useState('');
+    
+    const filteredLogs = logs.filter(l => 
+      l.user.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      l.details.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      l.action.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    return (
+      <Card className="p-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+          <h3 className="text-xl font-bold text-white">ประวัติการทำรายการ (Activity Logs)</h3>
+          <div className="relative w-full md:w-64">
+            <input 
+              type="text" 
+              placeholder="ค้นหาชื่อ, ไอเทม, รายการ..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-purple-500 transition-all"
+            />
+            <Search className="absolute left-3 top-2.5 text-slate-500" size={18} />
+          </div>
+        </div>
+
+        <div className="relative border-l border-slate-800 ml-4 space-y-8 pb-4">
+          {filteredLogs.map((log, idx) => (
+            <div key={log.id} className="relative pl-6">
+              {/* Timeline dot */}
+              <div className="absolute -left-[5px] top-1.5 w-[9px] h-[9px] rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.8)]"></div>
+              
+              <div className="bg-slate-800/30 border border-slate-800/50 rounded-lg p-4 hover:bg-slate-800/50 transition-colors">
+                <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-2 mb-2">
+                  <div>
+                    <span className="font-bold text-purple-400 mr-2">{log.user}</span>
+                    <span className="text-slate-300 font-medium">{log.action}</span>
+                  </div>
+                  <span className="text-xs text-slate-500 flex items-center bg-slate-900 px-2 py-1 rounded">
+                    <Clock size={12} className="mr-1" /> {formatDate(log.date)}
+                  </span>
+                </div>
+                <p className="text-slate-400 text-sm">{log.details}</p>
+              </div>
+            </div>
+          ))}
+          {filteredLogs.length === 0 && <p className="text-slate-500 pl-6">ไม่พบประวัติการค้นหาของคุณ</p>}
+        </div>
+      </Card>
+    );
+  };
+
+  const renderTargets = () => {
+    const [tItem, setTItem] = useState('เหล็ก');
+    const [tVal, setTVal] = useState('');
+    const [tDeadline, setTDeadline] = useState('');
+
+    return (
+      <div className="max-w-2xl mx-auto space-y-6">
+        <Card className="p-6">
+          <h3 className="text-xl font-bold text-white mb-2">ตั้งค่าระบบส่งของ</h3>
+          <p className="text-slate-400 text-sm mb-6">กำหนดหัวข้อ Week และตั้งเป้าหมายพร้อมวันที่ส่งของ</p>
+          
+          <div className="mb-6 pb-6 border-b border-slate-800">
+            <label className="block text-sm font-medium text-slate-400 mb-2">ชื่อ Week (เช่น Week 1, ส่งของต้นเดือน)</label>
+            <input 
+              type="text" value={targetWeekName} onChange={(e) => setTargetWeekName(e.target.value)}
+              placeholder="เช่น Week 1"
+              className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 focus:outline-none focus:border-purple-500"
+            />
+          </div>
+
+          <form onSubmit={(e) => { handleSetTarget(e, tItem, tVal, tDeadline); setTVal(''); setTDeadline(''); }} className="flex flex-col gap-4 mb-8">
+            <div className="flex flex-col md:flex-row gap-4">
+              <select 
+                value={tItem} onChange={(e) => setTItem(e.target.value)}
+                className="flex-1 bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 focus:outline-none focus:border-purple-500 font-medium"
+              >
+                <option value="เงิน">เงิน</option>
+                {inventory.map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
+              </select>
+              <input 
+                type="number" min="1" required value={tVal} onChange={(e) => setTVal(e.target.value)}
+                placeholder="ระบุจำนวนเป้าหมาย..."
+                className="flex-1 bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="flex-1">
+                <input 
+                  type="date" required value={tDeadline} onChange={(e) => setTDeadline(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 text-slate-400 rounded-lg p-3 focus:outline-none focus:border-purple-500"
+                />
+              </div>
+              <button type="submit" className="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-6 rounded-lg transition-all whitespace-nowrap">
+                บันทึกเป้าหมาย
+              </button>
+            </div>
+          </form>
+
+          <div className="space-y-4">
+            {targets.map(t => (
+              <div key={t.id} className="flex justify-between items-center bg-slate-800/40 p-4 rounded-lg border border-slate-800">
+                <div>
+                  <h4 className="font-bold text-lg" style={{ color: inventory.find(i => i.name === t.item)?.color || '#e2e8f0' }}>{t.item}</h4>
+                  <p className="text-sm text-slate-500">เก็บได้แล้ว: {t.current.toLocaleString()}</p>
+                  <p className="text-xs text-slate-400 mt-1">กำหนด: {formatDateOnly(t.deadline)}</p>
+                </div>
+                <div className="text-right">
+                  <div className="font-bold text-purple-400 text-xl">{t.target.toLocaleString()}</div>
+                  <button 
+                    onClick={() => setTargets(prev => prev.filter(x => x.id !== t.id))}
+                    className="text-xs text-red-400 hover:text-red-300 mt-2"
+                  >
+                    ลบเป้าหมาย
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    );
+  };
+
+  // --- MAIN RENDER ---
+  return (
+    <div className="flex h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden selection:bg-purple-500/30">
+      
+      {/* MOBILE OVERLAY */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* SIDEBAR */}
+      <aside className={`fixed inset-y-0 left-0 w-64 bg-slate-900 border-r border-slate-800 shadow-2xl z-50 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:flex lg:flex-col ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800 bg-slate-900/50">
+          <div className="flex items-center space-x-2">
+            <Shield className="text-purple-500 drop-shadow-[0_0_8px_rgba(168,85,247,0.8)]" size={24} />
+            <span className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400 tracking-wider">
+              NEXUS RP
+            </span>
+          </div>
+          <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden text-slate-400 hover:text-white">
+            <X size={24} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto py-6 px-4 space-y-2">
+          <NavItem icon={Home} label="หน้าแรก" tab="หน้าแรก" />
+          <NavItem icon={Package} label="คลังของ" tab="คลังของ" />
+          <NavItem icon={ArrowRightLeft} label="เบิก / ส่งของ" tab="เบิก / ส่งของ" />
+          <NavItem icon={Users} label="รายชื่อสมาชิก" tab="สมาชิก" />
+          <NavItem icon={Activity} label="ประวัติรายการ (Logs)" tab="ประวัติ" />
+          {isLeader && <NavItem icon={Target} label="จัดการเป้าหมาย" tab="เป้าหมาย" />}
+        </div>
+
+        <div className="p-4 border-t border-slate-800 bg-slate-900/50">
+          <div className="flex items-center space-x-3 mb-4 p-2 rounded-lg bg-slate-800/50">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-purple-600 to-blue-600 flex items-center justify-center font-bold text-white shadow-md">
+              {currentUser.name.charAt(0)}
+            </div>
+            <div className="overflow-hidden">
+              <p className="text-sm font-bold text-white truncate">{currentUser.name}</p>
+              <p className="text-xs text-purple-400 font-medium">{currentUser.role}</p>
+            </div>
+          </div>
+          
+          <div className="text-xs text-slate-500 mb-1">ทดสอบเปลี่ยน Role:</div>
+          <select 
+            value={currentUser.id}
+            onChange={(e) => {
+              const u = users.find(x => x.id === e.target.value);
+              setCurrentUser(u);
+              if (u.role !== 'Leader' && activeTab === 'เป้าหมาย') setActiveTab('หน้าแรก');
+            }}
+            className="w-full bg-slate-950 border border-slate-700 text-slate-300 rounded p-1.5 text-sm focus:outline-none focus:border-purple-500"
+          >
+            {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
+          </select>
+        </div>
+      </aside>
+
+      {/* MAIN CONTENT */}
+      <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
+        {/* Background Gradients */}
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/20 rounded-full blur-[120px] pointer-events-none"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-900/10 rounded-full blur-[120px] pointer-events-none"></div>
+
+        {/* HEADER */}
+        <header className="h-16 flex items-center justify-between px-4 lg:px-8 border-b border-slate-800/60 bg-slate-950/50 backdrop-blur-md z-10">
+          <div className="flex items-center">
+            <button onClick={() => setIsMobileMenuOpen(true)} className="mr-4 lg:hidden text-slate-400 hover:text-white transition-colors">
+              <Menu size={24} />
+            </button>
+            <h1 className="text-xl font-bold text-slate-200">{activeTab}</h1>
+          </div>
+          
+          <div className="flex items-center space-x-4 text-sm">
+            <div className="hidden md:flex items-center text-slate-400 bg-slate-900/80 px-3 py-1.5 rounded-full border border-slate-800">
+              <div className="w-2 h-2 rounded-full bg-green-500 mr-2 shadow-[0_0_5px_rgba(34,197,94,0.8)]"></div>
+              ระบบออนไลน์
+            </div>
+          </div>
+        </header>
+
+        {/* PAGE CONTENT */}
+        <div className="flex-1 overflow-y-auto p-4 lg:p-8 z-10 custom-scrollbar">
+          <div className="max-w-7xl mx-auto">
+            {activeTab === 'หน้าแรก' && renderDashboard()}
+            {activeTab === 'คลังของ' && renderInventory()}
+            {activeTab === 'เบิก / ส่งของ' && renderRequests()}
+            {activeTab === 'สมาชิก' && renderMembers()}
+            {activeTab === 'ประวัติ' && renderLogs()}
+            {activeTab === 'เป้าหมาย' && isLeader && renderTargets()}
+          </div>
+        </div>
+      </main>
+
+      {/* Custom Scrollbar Styles embedded */}
+      <style dangerouslySetInnerHTML={{__html: `
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(51, 65, 85, 0.8); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(71, 85, 105, 1); }
+      `}} />
+    </div>
+  );
+}
