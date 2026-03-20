@@ -1,778 +1,780 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { 
-  Menu, X, Home, Package, Send, Users, Activity, 
-  Target, Shield, Check, XCircle, Clock, Plus, 
-  ArrowRightLeft, DollarSign, Trophy, Search, AlertCircle, LogOut
-} from 'lucide-react';
-
-// --- ข้อมูลจำลอง (MOCK DATA) ---
-const INITIAL_USERS = [
-  { id: 'u1', name: 'Kenapa', role: 'Leader', joinDate: '2024-01-10', contributed: 500, withdrawn: 100 },
-  { id: 'u2', name: 'Mike', role: 'Admin', joinDate: '2024-02-15', contributed: 300, withdrawn: 50 },
-  { id: 'u3', name: 'Tony', role: 'Admin', joinDate: '2024-03-01', contributed: 250, withdrawn: 80 },
-  { id: 'u4', name: 'Jack', role: 'Member', joinDate: '2024-06-20', contributed: 150, withdrawn: 200 },
-  { id: 'u5', name: 'Somchai', role: 'Member', joinDate: '2024-07-11', contributed: 90, withdrawn: 20 },
-  { id: 'u6', name: 'Bank', role: 'Member', joinDate: '2024-08-05', contributed: 45, withdrawn: 10 },
-];
-
-const INITIAL_INVENTORY = [
-  { id: 'i1', name: 'เหล็ก', quantity: 420, color: '#a8b8d0' },
-  { id: 'i2', name: 'กระสุน', quantity: 700, color: '#ef4444' },
-  { id: 'i3', name: 'ยา', quantity: 120, color: '#22c55e' },
-  { id: 'i4', name: 'ปืน', quantity: 6, color: '#a855f7' },
-  { id: 'i5', name: 'ปืนพก', quantity: 12, color: '#eab308' },
-  { id: 'i6', name: 'ผ้าพันแผล', quantity: 45, color: '#f9a8d4' },
-];
-
-const INITIAL_TARGETS = [
-  { id: 't1', item: 'เหล็ก', current: 230, target: 500, deadline: '2026-03-31' },
-  { id: 't2', item: 'กระสุน', current: 600, target: 1000, deadline: '2026-03-31' },
-  { id: 't3', item: 'ยา', current: 50, target: 200, deadline: '2026-04-05' },
-  { id: 't4', item: 'เงิน', current: 120000, target: 200000, deadline: '2026-03-31' },
-];
-
-const INITIAL_HELD_ITEMS = [
-  { id: 'h1', userId: 'u1', item: 'กระสุน', quantity: 200 },
-  { id: 'h2', userId: 'u2', item: 'ปืน', quantity: 1 },
-  { id: 'h3', userId: 'u4', item: 'ปืนพก', quantity: 1 },
-];
-
-const INITIAL_REQUESTS = [
-  { id: 'r1', type: 'ส่งของ', userId: 'u1', item: 'เหล็ก', amount: 50, note: 'ฟาร์มมาวันนี้', status: 'Pending', date: new Date(Date.now() - 3600000).toISOString() },
-  { id: 'r2', type: 'เบิกของ', userId: 'u4', item: 'ปืน', amount: 1, note: 'เอาไปยึดพื้นที่', status: 'Pending', date: new Date(Date.now() - 1800000).toISOString() },
-  { id: 'r3', type: 'ส่งของ', userId: 'u5', item: 'ยา', amount: 20, note: 'ต้มเสร็จแล้ว', status: 'Approved', date: new Date(Date.now() - 86400000).toISOString() },
-];
-
-const INITIAL_LOGS = [
-  { id: 'l1', date: new Date(Date.now() - 86400000).toISOString(), user: 'Admin Mike', action: 'อนุมัติการส่งของ', details: 'ยา x20 ถูกเพิ่มเข้าคลังแล้ว' },
-  { id: 'l2', date: new Date(Date.now() - 86400000 * 2).toISOString(), user: 'Leader Kenapa', action: 'ตั้งเป้าหมาย', details: 'ตั้งเป้าหมาย เงิน จำนวน 200,000$' },
-];
-
-// --- ฟังก์ชันช่วยเหลือ ---
-const formatMoney = (amount) => new Intl.NumberFormat('en-US').format(amount) + '$';
-const formatDate = (dateStr) => {
-  const d = new Date(dateStr);
-  return `${d.toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'})} ${d.toLocaleDateString('th-TH', {day: '2-digit', month: 'short'})}`;
-};
-
-const formatDateOnly = (dateStr) => {
-  if (!dateStr) return '-';
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('th-TH', {day: '2-digit', month: 'short', year: 'numeric'});
-};
-
-export default function App() {
-  // State หลักของแอป
-  const [currentUser, setCurrentUser] = useState(INITIAL_USERS[0]); // เริ่มต้นเป็น Leader
-  const [activeTab, setActiveTab] = useState('หน้าแรก');
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  
-  const [targetWeekName, setTargetWeekName] = useState('Week 1');
-  const [users, setUsers] = useState(INITIAL_USERS);
-  const [inventory, setInventory] = useState(INITIAL_INVENTORY);
-  const [gangMoney, setGangMoney] = useState(120000);
-  const [targets, setTargets] = useState(INITIAL_TARGETS);
-  const [heldItems, setHeldItems] = useState(INITIAL_HELD_ITEMS);
-  const [requests, setRequests] = useState(INITIAL_REQUESTS);
-  const [logs, setLogs] = useState(INITIAL_LOGS);
-
-  // สิทธิ์การเข้าถึง
-  const isLeader = currentUser.role === 'Leader';
-  const isAdmin = currentUser.role === 'Leader' || currentUser.role === 'Admin';
-
-  // --- ACTIONS ---
-  const addLog = (user, action, details) => {
-    const newLog = { id: Date.now().toString(), date: new Date().toISOString(), user, action, details };
-    setLogs(prev => [newLog, ...prev]);
-    // จำลองการส่ง Discord Webhook
-    console.log(`[DISCORD WEBHOOK] ${user} ${action}: ${details}`);
-  };
-
-  const handleRequestSubmit = (e, type, item, amount, note) => {
-    e.preventDefault();
-    const newReq = {
-      id: Date.now().toString(),
-      type,
-      userId: currentUser.id,
-      item,
-      amount: parseInt(amount),
-      note,
-      status: 'Pending',
-      date: new Date().toISOString()
-    };
-    setRequests(prev => [newReq, ...prev]);
-    addLog(currentUser.name, `ทำรายการ${type}`, `${item} x${amount} (สถานะ Pending)`);
-    alert('ส่งคำร้องเรียบร้อยแล้ว!');
-  };
-
-  const handleApproveRequest = (req) => {
-    const user = users.find(u => u.id === req.userId);
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEXUS RP - Gang Management</title>
     
-    if (req.type === 'ส่งของ') {
-      // เพิ่มเข้าคลัง
-      setInventory(prev => {
-        const existing = prev.find(i => i.name === req.item);
-        if (existing) return prev.map(i => i.name === req.item ? { ...i, quantity: i.quantity + req.amount } : i);
-        return [...prev, { id: Date.now().toString(), name: req.item, quantity: req.amount }];
-      });
-      // อัปเดตเป้าหมาย
-      setTargets(prev => prev.map(t => t.item === req.item ? { ...t, current: t.current + req.amount } : t));
-      // อัปเดตสถิติผู้ใช้
-      setUsers(prev => prev.map(u => u.id === req.userId ? { ...u, contributed: u.contributed + req.amount } : u));
-      // กรณีเป็นเงินแก๊ง
-      if (req.item === 'เงิน') setGangMoney(prev => prev + req.amount);
-      
-      addLog(`${currentUser.role} ${currentUser.name}`, 'ยืนยันรายการส่งของ', `${user.name} ส่ง ${req.item} x${req.amount} เข้าคลังแล้ว`);
-    } 
-    else if (req.type === 'เบิกของ') {
-      // เช็คว่ามีของในคลังพอไหม
-      const invItem = inventory.find(i => i.name === req.item);
-      if (!invItem || invItem.quantity < req.amount) {
-        alert("มีของในคลังไม่เพียงพอ!");
-        return;
-      }
-      // ลดของออกจากคลัง
-      setInventory(prev => prev.map(i => i.name === req.item ? { ...i, quantity: i.quantity - req.amount } : i));
-      // เพิ่มของเข้ากระเป๋าคนถือ
-      setHeldItems(prev => {
-        const existing = prev.find(h => h.userId === req.userId && h.item === req.item);
-        if (existing) return prev.map(h => h.id === existing.id ? { ...h, quantity: h.quantity + req.amount } : h);
-        return [...prev, { id: Date.now().toString(), userId: req.userId, item: req.item, quantity: req.amount }];
-      });
-      // อัปเดตสถิติ
-      setUsers(prev => prev.map(u => u.id === req.userId ? { ...u, withdrawn: u.withdrawn + req.amount } : u));
-      // กรณีเงิน
-      if (req.item === 'เงิน') setGangMoney(prev => prev - req.amount);
-
-      addLog(`${currentUser.role} ${currentUser.name}`, 'อนุมัติการเบิกของ', `${user.name} เบิก ${req.item} x${req.amount} สำเร็จ`);
-    }
-
-    // อัปเดตสถานะเป็น Approved
-    setRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'Approved' } : r));
-  };
-
-  const handleRejectRequest = (req) => {
-  const user = users.find(u => u.id === req.userId);
-  setRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'Rejected' } : r));
-  addLog(`${currentUser.role} ${currentUser.name}`, 'ปฏิเสธรายการ', `ไม่อนุมัติคำร้องขอ${req.type} ${req.item} x${req.amount} ของ ${user.name}`);
-};
-
-const handleSetTarget = (e, item, targetVal, deadline) => {
-  e.preventDefault();
-  setTargets(prev => {
-    const existing = prev.find(t => t.item === item);
-    if (existing) return prev.map(t => t.item === item ? { ...t, target: parseInt(targetVal), deadline } : t);
-    return [...prev, { id: Date.now().toString(), item, current: 0, target: parseInt(targetVal), deadline }];
-  });
-  addLog(currentUser.name, 'ตั้งค่าเป้าหมายใหม่', `เป้าหมายสัปดาห์ ${targetWeekName} ${item}: ${targetVal} ชิ้น`);
-};
-
-const handleAddInventoryItem = (e, name, color) => {
-  e.preventDefault();
-  if (!name) return;
-  const existing = inventory.find(i => i.name.toLowerCase() === name.toLowerCase());
-  if (existing) {
-     setInventory(prev => prev.map(i => i.id === existing.id ? {...i, color} : i));
-     addLog(currentUser.name, 'อัปเดตสีไอเทม', `อัปเดตสี ${name}`);
-  } else {
-     setInventory(prev => [...prev, { id: 'i'+Date.now(), name, quantity: 0, color }]);
-     addLog(currentUser.name, 'เพิ่มไอเทมใหม่', `เพิ่ม ${name} เข้าระบบคลัง`);
-  }
-};
-
-// --- SUB-COMPONENTS ---
-  const NavItem = ({ icon: Icon, label, tab }) => (
-    <button
-      onClick={() => { setActiveTab(tab); setIsMobileMenuOpen(false); }}
-      className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 ${
-        activeTab === tab 
-          ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]' 
-          : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'
-      }`}
-    >
-      <Icon size={20} />
-      <span className="font-medium text-sm md:text-base">{label}</span>
-    </button>
-  );
-
-  const Card = ({ children, className = "" }) => (
-    <div className={`bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-xl shadow-xl overflow-hidden ${className}`}>
-      {children}
-    </div>
-  );
-
-  const StatusBadge = ({ status }) => {
-    const styles = {
-      Pending: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
-      Approved: 'bg-green-500/10 text-green-400 border-green-500/20',
-      Rejected: 'bg-red-500/10 text-red-400 border-red-500/20',
-    };
+    <!-- Tailwind CSS สำหรับตกแต่งเว็บ -->
+    <script src="https://cdn.tailwindcss.com"></script>
     
-    const displayStatus = {
-      Pending: 'รออนุมัติ',
-      Approved: 'อนุมัติแล้ว',
-      Rejected: 'ปฏิเสธ'
-    };
-
-    return (
-      <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${styles[status]}`}>
-        {displayStatus[status]}
-      </span>
-    );
-  };
-
-  // --- VIEWS ---
-  const renderDashboard = () => (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
-        <Card className="p-6 bg-gradient-to-br from-slate-900 to-slate-900/50 relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-4 opacity-20"><DollarSign size={64} className="text-emerald-500" /></div>
-          <h3 className="text-slate-400 text-sm font-semibold uppercase tracking-wider">เงินแก๊ง</h3>
-          <p className="text-4xl font-bold text-white mt-2 drop-shadow-md">{formatMoney(gangMoney)}</p>
-          <div className="mt-4 flex items-center text-sm text-emerald-400">
-            <Activity size={16} className="mr-1" /> การเงินมั่นคง
-          </div>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="p-6">
-          <h3 className="text-xl font-bold text-white mb-6 flex items-center">
-            <Target className="mr-2 text-purple-500" /> ส่งของ {targetWeekName}
-          </h3>
-          <div className="space-y-6">
-            {targets.map(t => {
-              const percent = Math.min(100, Math.round((t.current / t.target) * 100));
-              return (
-                <div key={t.id}>
-                  <div className="flex justify-between text-sm mb-1 items-center">
-                    <div>
-                      <span className="text-slate-200 font-bold text-base" style={{ color: inventory.find(i => i.name === t.item)?.color || '#e2e8f0' }}>{t.item}</span>
-                      <span className="text-xs text-slate-500 ml-2">กำหนด: {formatDateOnly(t.deadline)}</span>
-                    </div>
-                    <span className="text-slate-400">
-                      <span className="text-white font-bold">{t.current.toLocaleString()}</span> / {t.target.toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden">
-                    <div 
-                      className="bg-gradient-to-r from-purple-600 to-blue-500 h-3 rounded-full transition-all duration-1000 relative shadow-[0_0_10px_rgba(168,85,247,0.5)]"
-                      style={{ width: `${percent}%` }}
-                    ></div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </Card>
-
-        <Card className="p-6">
-          <h3 className="text-xl font-bold text-white mb-6 flex items-center">
-            <Activity className="mr-2 text-blue-500" /> กิจกรรมล่าสุด
-          </h3>
-          <div className="space-y-4">
-            {logs.slice(0, 5).map(log => (
-              <div key={log.id} className="flex items-start space-x-3 pb-4 border-b border-slate-800/50 last:border-0 last:pb-0">
-                <div className="bg-slate-800 p-2 rounded-lg mt-1">
-                  <Clock size={16} className="text-slate-400" />
-                </div>
-                <div>
-                  <p className="text-sm text-slate-200">
-                    <span className="font-semibold text-purple-400">{log.user}</span> {log.details}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">{formatDate(log.date)}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
-    </div>
-  );
-
-  const renderInventory = () => {
-    const [newItemName, setNewItemName] = useState('');
-    const [newItemColor, setNewItemColor] = useState('#a855f7');
-
-    return (
-      <div className="space-y-6">
-        <div className="flex justify-between items-end">
-          <div>
-            <h2 className="text-2xl font-bold text-white">คลังของแก๊ง</h2>
-            <p className="text-slate-400 text-sm mt-1">ของส่วนกลางทั้งหมดที่ Admin ต้องดูแล</p>
-          </div>
-        </div>
-        
-        {isAdmin && (
-          <Card className="p-6">
-            <h3 className="text-lg font-bold text-white mb-4">เพิ่ม / แก้ไขสีไอเทมในคลัง</h3>
-            <form onSubmit={(e) => { handleAddInventoryItem(e, newItemName, newItemColor); setNewItemName(''); }} className="flex flex-col md:flex-row gap-4">
-              <input 
-                type="text" required value={newItemName} onChange={(e) => setNewItemName(e.target.value)}
-                placeholder="ชื่อไอเทม..."
-                className="flex-1 bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 focus:outline-none focus:border-purple-500"
-              />
-              <div className="flex items-center gap-3 bg-slate-950 border border-slate-800 rounded-lg px-3">
-                <label className="text-sm text-slate-400">สีไอเทม:</label>
-                <input 
-                  type="color" value={newItemColor} onChange={(e) => setNewItemColor(e.target.value)}
-                  className="w-8 h-8 rounded cursor-pointer bg-transparent border-none"
-                />
-              </div>
-              <button type="submit" className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-6 rounded-lg transition-all whitespace-nowrap">
-                บันทึกไอเทม
-              </button>
-            </form>
-          </Card>
-        )}
-
-        <Card className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-800/50 text-slate-400 text-sm uppercase tracking-wider border-b border-slate-700">
-                <th className="p-4 font-medium">ชื่อของ</th>
-                <th className="p-4 font-medium">จำนวน</th>
-                <th className="p-4 font-medium">หมวดหมู่</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/50">
-              {inventory.map(item => (
-                <tr key={item.id} className="hover:bg-slate-800/30 transition-colors">
-                  <td className="p-4 flex items-center font-bold text-base" style={{ color: item.color || '#e2e8f0' }}>
-                    <Package size={16} className="mr-3 opacity-70" /> {item.name}
-                  </td>
-                  <td className="p-4 font-bold text-purple-400">{item.quantity.toLocaleString()}</td>
-                  <td className="p-4 text-slate-500 text-sm">ไอเทมทั่วไป</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-
-        <h2 className="text-2xl font-bold text-white mt-8 mb-4">ของที่สมาชิกกำลังถืออยู่</h2>
-        <Card className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-800/50 text-slate-400 text-sm uppercase tracking-wider border-b border-slate-700">
-                <th className="p-4 font-medium">ชื่อสมาชิก</th>
-                <th className="p-4 font-medium">ของที่ถืออยู่</th>
-                <th className="p-4 font-medium">จำนวน</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/50">
-              {heldItems.length === 0 && <tr><td colSpan="3" className="p-4 text-center text-slate-500">ไม่มีสมาชิกคนไหนถือของอยู่</td></tr>}
-              {heldItems.map(held => {
-                const user = users.find(u => u.id === held.userId);
-                const itemData = inventory.find(i => i.name === held.item);
-                return (
-                  <tr key={held.id} className="hover:bg-slate-800/30 transition-colors">
-                    <td className="p-4 text-slate-200 flex items-center font-medium">
-                      <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center mr-3 font-bold text-xs">
-                        {user?.name.charAt(0)}
-                      </div>
-                      {user?.name || 'ไม่ทราบชื่อ'}
-                    </td>
-                    <td className="p-4 font-bold" style={{ color: itemData?.color || '#e2e8f0' }}>{held.item}</td>
-                    <td className="p-4 font-bold text-purple-400">{held.quantity.toLocaleString()}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </Card>
-      </div>
-    );
-  };
-
-  const renderRequests = () => {
-    const [reqType, setReqType] = useState('ส่งของ');
-    const [reqItem, setReqItem] = useState('เหล็ก');
-    const [reqAmount, setReqAmount] = useState('');
-    const [reqNote, setReqNote] = useState('');
-
-    const displayRequests = isAdmin ? requests : requests.filter(r => r.userId === currentUser.id);
-
-    return (
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* ฟอร์มสร้างคำร้อง */}
-        <div className="lg:col-span-1">
-          <Card className="p-6 sticky top-6">
-            <h3 className="text-xl font-bold text-white mb-6">สร้างคำร้องใหม่</h3>
-            <form onSubmit={(e) => { handleRequestSubmit(e, reqType, reqItem, reqAmount, reqNote); setReqAmount(''); setReqNote(''); }} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">ประเภท</label>
-                <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
-                  {['ส่งของ', 'เบิกของ'].map(t => (
-                    <button
-                      type="button"
-                      key={t}
-                      onClick={() => setReqType(t)}
-                      className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${reqType === t ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">เลือกของ</label>
-                <select 
-                  value={reqItem} onChange={(e) => setReqItem(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all font-medium"
-                >
-                  <option value="เงิน">เงิน</option>
-                  {inventory.map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">จำนวน</label>
-                <input 
-                  type="number" min="1" required value={reqAmount} onChange={(e) => setReqAmount(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all"
-                  placeholder="เช่น 50"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">เหตุผล / หมายเหตุ</label>
-                <textarea 
-                  required value={reqNote} onChange={(e) => setReqNote(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 h-24 resize-none focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all text-sm"
-                  placeholder="ทำไมถึงต้องการเบิก หรือได้ของมาจากไหน?"
-                ></textarea>
-              </div>
-
-              <button type="submit" className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-4 rounded-lg transition-all shadow-[0_0_15px_rgba(168,85,247,0.3)] hover:shadow-[0_0_25px_rgba(168,85,247,0.5)] flex justify-center items-center">
-                <Send size={18} className="mr-2" /> ยืนยันทำรายการ
-              </button>
-            </form>
-          </Card>
-        </div>
-
-        {/* รายการคำร้อง */}
-        <div className="lg:col-span-2">
-          <Card className="overflow-hidden">
-            <div className="p-6 border-b border-slate-800 bg-slate-800/20 flex justify-between items-center">
-              <h3 className="text-xl font-bold text-white">{isAdmin ? 'ประวัติคำร้องทั้งหมด' : 'คำร้องของฉัน'}</h3>
-            </div>
-            <div className="divide-y divide-slate-800/50 max-h-[70vh] overflow-y-auto">
-              {displayRequests.length === 0 && <p className="p-6 text-slate-500 text-center">ยังไม่มีประวัติทำรายการ</p>}
-              {displayRequests.map(req => {
-                const user = users.find(u => u.id === req.userId);
-                return (
-                  <div key={req.id} className="p-6 hover:bg-slate-800/20 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex items-start space-x-4">
-                      <div className={`p-3 rounded-full mt-1 ${req.type === 'ส่งของ' ? 'bg-green-500/10 text-green-500' : 'bg-blue-500/10 text-blue-500'}`}>
-                        <ArrowRightLeft size={20} />
-                      </div>
-                      <div>
-                        <div className="flex items-center space-x-3 mb-1">
-                          <span className="font-bold text-slate-200">{user?.name}</span>
-                          <span className="text-slate-500 text-sm">ขอ{req.type}</span>
-                    </div>
-                    <p className="text-lg text-white font-bold">{req.item} <span className="text-purple-400">x{req.amount}</span></p>
-                    <p className="text-sm text-slate-400 mt-1 bg-slate-900/50 p-2 rounded border border-slate-800">"{req.note}"</p>
-                    <p className="text-xs text-slate-500 mt-2">{formatDate(req.date)}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col items-end space-y-3">
-                      <StatusBadge status={req.status} />
-                      {isAdmin && req.status === 'Pending' && (
-                        <div className="flex space-x-2 mt-2">
-                          <button onClick={() => handleApproveRequest(req)} className="px-3 py-1.5 text-sm font-medium bg-green-500/20 hover:bg-green-500/40 text-green-400 rounded-lg transition-colors flex items-center" title="อนุมัติ">
-                            <Check size={16} className="mr-1" /> ยืนยัน
-                          </button>
-                          <button onClick={() => handleRejectRequest(req)} className="px-3 py-1.5 text-sm font-medium bg-red-500/20 hover:bg-red-500/40 text-red-400 rounded-lg transition-colors flex items-center" title="ปฏิเสธ">
-                            <XCircle size={16} className="mr-1" /> ปฏิเสธ
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </Card>
-        </div>
-      </div>
-    );
-  };
-
-  const renderMembers = () => (
-    <div className="space-y-6">
-      <Card className="overflow-x-auto">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-slate-800/50 text-slate-400 text-sm uppercase tracking-wider border-b border-slate-700">
-              <th className="p-4 font-medium">ชื่อ</th>
-              <th className="p-4 font-medium">ยศ (Rank)</th>
-              <th className="p-4 font-medium">วันที่เข้าแก๊ง</th>
-              <th className="p-4 font-medium text-right">ส่งของเข้า</th>
-              <th className="p-4 font-medium text-right">เบิกของออก</th>
-              {isLeader && <th className="p-4 font-medium text-center">จัดการ</th>}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/50">
-            {users.map(u => (
-              <tr key={u.id} className="hover:bg-slate-800/30 transition-colors">
-                <td className="p-4">
-              <span className={`px-2.5 py-1 text-xs font-semibold rounded-full border ${
-                u.role === 'Leader' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
-                u.role === 'Admin' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
-                'bg-slate-700/50 text-slate-300 border-slate-600'
-              }`}>
-                {u.role}
-              </span>
-            </td>
-            <td className="p-4 text-slate-400 text-sm">{new Date(u.joinDate).toLocaleDateString('th-TH')}</td>
-            <td className="p-4 text-right text-green-400 font-bold">+{u.contributed}</td>
-            <td className="p-4 text-right text-red-400 font-bold">-{u.withdrawn}</td>
-            {isLeader && (
-              <td className="p-4 text-center">
-                    <button className="text-slate-500 hover:text-red-400 transition-colors" title="เตะออก (ระบบจำลอง)">
-                      <XCircle size={18} className="mx-auto" />
-                    </button>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
-    </div>
-  );
-
-  const renderLogs = () => {
-    const [searchTerm, setSearchTerm] = useState('');
+    <!-- Font Awesome สำหรับไอคอนต่างๆ -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    const filteredLogs = logs.filter(l => 
-      l.user.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      l.details.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      l.action.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- Babel สำหรับแปลงโค้ด React (JSX) ให้ทำงานบนเบราว์เซอร์ได้ทันที -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    return (
-      <Card className="p-6">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-          <h3 className="text-xl font-bold text-white">ประวัติการทำรายการ (Activity Logs)</h3>
-          <div className="relative w-full md:w-64">
-            <input 
-              type="text" 
-              placeholder="ค้นหาชื่อ, ไอเทม, รายการ..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-purple-500 transition-all"
-            />
-            <Search className="absolute left-3 top-2.5 text-slate-500" size={18} />
-          </div>
-        </div>
-
-        <div className="relative border-l border-slate-800 ml-4 space-y-8 pb-4">
-          {filteredLogs.map((log, idx) => (
-            <div key={log.id} className="relative pl-6">
-              {/* Timeline dot */}
-              <div className="absolute -left-[5px] top-1.5 w-[9px] h-[9px] rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.8)]"></div>
-              
-              <div className="bg-slate-800/30 border border-slate-800/50 rounded-lg p-4 hover:bg-slate-800/50 transition-colors">
-                <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-2 mb-2">
-                  <div>
-                    <span className="font-bold text-purple-400 mr-2">{log.user}</span>
-                    <span className="text-slate-300 font-medium">{log.action}</span>
-                  </div>
-                  <span className="text-xs text-slate-500 flex items-center bg-slate-900 px-2 py-1 rounded">
-                    <Clock size={12} className="mr-1" /> {formatDate(log.date)}
-                  </span>
-                </div>
-                <p className="text-slate-400 text-sm">{log.details}</p>
-              </div>
-            </div>
-          ))}
-          {filteredLogs.length === 0 && <p className="text-slate-500 pl-6">ไม่พบประวัติการค้นหาของคุณ</p>}
-        </div>
-      </Card>
-    );
-  };
-
-  const renderTargets = () => {
-    const [tItem, setTItem] = useState('เหล็ก');
-    const [tVal, setTVal] = useState('');
-    const [tDeadline, setTDeadline] = useState('');
-
-    return (
-      <div className="max-w-2xl mx-auto space-y-6">
-        <Card className="p-6">
-          <h3 className="text-xl font-bold text-white mb-2">ตั้งค่าระบบส่งของ</h3>
-          <p className="text-slate-400 text-sm mb-6">กำหนดหัวข้อ Week และตั้งเป้าหมายพร้อมวันที่ส่งของ</p>
-          
-          <div className="mb-6 pb-6 border-b border-slate-800">
-            <label className="block text-sm font-medium text-slate-400 mb-2">ชื่อ Week (เช่น Week 1, ส่งของต้นเดือน)</label>
-            <input 
-              type="text" value={targetWeekName} onChange={(e) => setTargetWeekName(e.target.value)}
-              placeholder="เช่น Week 1"
-              className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 focus:outline-none focus:border-purple-500"
-            />
-          </div>
-
-          <form onSubmit={(e) => { handleSetTarget(e, tItem, tVal, tDeadline); setTVal(''); setTDeadline(''); }} className="flex flex-col gap-4 mb-8">
-            <div className="flex flex-col md:flex-row gap-4">
-              <select 
-                value={tItem} onChange={(e) => setTItem(e.target.value)}
-                className="flex-1 bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 focus:outline-none focus:border-purple-500 font-medium"
-              >
-                <option value="เงิน">เงิน</option>
-                {inventory.map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
-              </select>
-              <input 
-                type="number" min="1" required value={tVal} onChange={(e) => setTVal(e.target.value)}
-                placeholder="ระบุจำนวนเป้าหมาย..."
-                className="flex-1 bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="flex-1">
-                <input 
-                  type="date" required value={tDeadline} onChange={(e) => setTDeadline(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 text-slate-400 rounded-lg p-3 focus:outline-none focus:border-purple-500"
-                />
-              </div>
-              <button type="submit" className="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-6 rounded-lg transition-all whitespace-nowrap">
-                บันทึกเป้าหมาย
-              </button>
-            </div>
-          </form>
-
-          <div className="space-y-4">
-            {targets.map(t => (
-              <div key={t.id} className="flex justify-between items-center bg-slate-800/40 p-4 rounded-lg border border-slate-800">
-                <div>
-                  <h4 className="font-bold text-lg" style={{ color: inventory.find(i => i.name === t.item)?.color || '#e2e8f0' }}>{t.item}</h4>
-                  <p className="text-sm text-slate-500">เก็บได้แล้ว: {t.current.toLocaleString()}</p>
-                  <p className="text-xs text-slate-400 mt-1">กำหนด: {formatDateOnly(t.deadline)}</p>
-                </div>
-                <div className="text-right">
-                  <div className="font-bold text-purple-400 text-xl">{t.target.toLocaleString()}</div>
-                  <button 
-                    onClick={() => setTargets(prev => prev.filter(x => x.id !== t.id))}
-                    className="text-xs text-red-400 hover:text-red-300 mt-2"
-                  >
-                    ลบเป้าหมาย
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
-    );
-  };
-
-  // --- MAIN RENDER ---
-  return (
-    <div className="flex h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden selection:bg-purple-500/30">
-      
-      {/* MOBILE OVERLAY */}
-      {isMobileMenuOpen && (
-        <div 
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
-          onClick={() => setIsMobileMenuOpen(false)}
-        />
-      )}
-
-      {/* SIDEBAR */}
-      <aside className={`fixed inset-y-0 left-0 w-64 bg-slate-900 border-r border-slate-800 shadow-2xl z-50 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:flex lg:flex-col ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800 bg-slate-900/50">
-          <div className="flex items-center space-x-2">
-            <Shield className="text-purple-500 drop-shadow-[0_0_8px_rgba(168,85,247,0.8)]" size={24} />
-            <span className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400 tracking-wider">
-              NEXUS RP
-            </span>
-          </div>
-          <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden text-slate-400 hover:text-white">
-            <X size={24} />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto py-6 px-4 space-y-2">
-          <NavItem icon={Home} label="หน้าแรก" tab="หน้าแรก" />
-          <NavItem icon={Package} label="คลังของ" tab="คลังของ" />
-          <NavItem icon={ArrowRightLeft} label="เบิก / ส่งของ" tab="เบิก / ส่งของ" />
-          <NavItem icon={Users} label="รายชื่อสมาชิก" tab="สมาชิก" />
-          <NavItem icon={Activity} label="ประวัติรายการ (Logs)" tab="ประวัติ" />
-          {isLeader && <NavItem icon={Target} label="จัดการเป้าหมาย" tab="เป้าหมาย" />}
-        </div>
-
-        <div className="p-4 border-t border-slate-800 bg-slate-900/50">
-          <div className="flex items-center space-x-3 mb-4 p-2 rounded-lg bg-slate-800/50">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-purple-600 to-blue-600 flex items-center justify-center font-bold text-white shadow-md">
-              {currentUser.name.charAt(0)}
-            </div>
-            <div className="overflow-hidden">
-              <p className="text-sm font-bold text-white truncate">{currentUser.name}</p>
-              <p className="text-xs text-purple-400 font-medium">{currentUser.role}</p>
-            </div>
-          </div>
-          
-          <div className="text-xs text-slate-500 mb-1">ทดสอบเปลี่ยน Role:</div>
-          <select 
-            value={currentUser.id}
-            onChange={(e) => {
-              const u = users.find(x => x.id === e.target.value);
-              setCurrentUser(u);
-              if (u.role !== 'Leader' && activeTab === 'เป้าหมาย') setActiveTab('หน้าแรก');
-            }}
-            className="w-full bg-slate-950 border border-slate-700 text-slate-300 rounded p-1.5 text-sm focus:outline-none focus:border-purple-500"
-          >
-            {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
-          </select>
-        </div>
-      </aside>
-
-      {/* MAIN CONTENT */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
-        {/* Background Gradients */}
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/20 rounded-full blur-[120px] pointer-events-none"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-900/10 rounded-full blur-[120px] pointer-events-none"></div>
-
-        {/* HEADER */}
-        <header className="h-16 flex items-center justify-between px-4 lg:px-8 border-b border-slate-800/60 bg-slate-950/50 backdrop-blur-md z-10">
-          <div className="flex items-center">
-            <button onClick={() => setIsMobileMenuOpen(true)} className="mr-4 lg:hidden text-slate-400 hover:text-white transition-colors">
-              <Menu size={24} />
-            </button>
-            <h1 className="text-xl font-bold text-slate-200">{activeTab}</h1>
-          </div>
-          
-          <div className="flex items-center space-x-4 text-sm">
-            <div className="hidden md:flex items-center text-slate-400 bg-slate-900/80 px-3 py-1.5 rounded-full border border-slate-800">
-              <div className="w-2 h-2 rounded-full bg-green-500 mr-2 shadow-[0_0_5px_rgba(34,197,94,0.8)]"></div>
-              ระบบออนไลน์
-            </div>
-          </div>
-        </header>
-
-        {/* PAGE CONTENT */}
-        <div className="flex-1 overflow-y-auto p-4 lg:p-8 z-10 custom-scrollbar">
-          <div className="max-w-7xl mx-auto">
-            {activeTab === 'หน้าแรก' && renderDashboard()}
-            {activeTab === 'คลังของ' && renderInventory()}
-            {activeTab === 'เบิก / ส่งของ' && renderRequests()}
-            {activeTab === 'สมาชิก' && renderMembers()}
-            {activeTab === 'ประวัติ' && renderLogs()}
-            {activeTab === 'เป้าหมาย' && isLeader && renderTargets()}
-          </div>
-        </div>
-      </main>
-
-      {/* Custom Scrollbar Styles embedded */}
-      <style dangerouslySetInnerHTML={{__html: `
+    <style>
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(51, 65, 85, 0.8); border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(71, 85, 105, 1); }
-      `}} />
-    </div>
-  );
-}
+        
+        /* ตั้งค่าความกว้างไอคอน FontAwesome ให้อยู่กึ่งกลาง */
+        .fa-fw { width: 1.25em; text-align: center; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 font-sans overflow-hidden selection:bg-purple-500/30">
+    <!-- จุดที่ React จะนำหน้าจอมาแสดง -->
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        // ดึงเครื่องมือของ React ออกมาใช้
+        const { useState, useEffect } = React;
+
+        // --- ข้อมูลจำลอง (MOCK DATA) ---
+        const INITIAL_USERS = [
+          { id: 'u1', name: 'Kenapa', role: 'Leader', joinDate: '2024-01-10', contributed: 500, withdrawn: 100 },
+          { id: 'u2', name: 'Mike', role: 'Admin', joinDate: '2024-02-15', contributed: 300, withdrawn: 50 },
+          { id: 'u3', name: 'Tony', role: 'Admin', joinDate: '2024-03-01', contributed: 250, withdrawn: 80 },
+          { id: 'u4', name: 'Jack', role: 'Member', joinDate: '2024-06-20', contributed: 150, withdrawn: 200 },
+          { id: 'u5', name: 'Somchai', role: 'Member', joinDate: '2024-07-11', contributed: 90, withdrawn: 20 },
+          { id: 'u6', name: 'Bank', role: 'Member', joinDate: '2024-08-05', contributed: 45, withdrawn: 10 },
+        ];
+
+        const INITIAL_INVENTORY = [
+          { id: 'i1', name: 'เหล็ก', quantity: 420, color: '#a8b8d0' },
+          { id: 'i2', name: 'กระสุน', quantity: 700, color: '#ef4444' },
+          { id: 'i3', name: 'ยา', quantity: 120, color: '#22c55e' },
+          { id: 'i4', name: 'ปืน', quantity: 6, color: '#a855f7' },
+          { id: 'i5', name: 'ปืนพก', quantity: 12, color: '#eab308' },
+          { id: 'i6', name: 'ผ้าพันแผล', quantity: 45, color: '#f9a8d4' },
+        ];
+
+        const INITIAL_TARGETS = [
+          { id: 't1', item: 'เหล็ก', current: 230, target: 500, deadline: '2026-03-31' },
+          { id: 't2', item: 'กระสุน', current: 600, target: 1000, deadline: '2026-03-31' },
+          { id: 't3', item: 'ยา', current: 50, target: 200, deadline: '2026-04-05' },
+          { id: 't4', item: 'เงิน', current: 120000, target: 200000, deadline: '2026-03-31' },
+        ];
+
+        const INITIAL_HELD_ITEMS = [
+          { id: 'h1', userId: 'u1', item: 'กระสุน', quantity: 200 },
+          { id: 'h2', userId: 'u2', item: 'ปืน', quantity: 1 },
+          { id: 'h3', userId: 'u4', item: 'ปืนพก', quantity: 1 },
+        ];
+
+        const INITIAL_REQUESTS = [
+          { id: 'r1', type: 'ส่งของ', userId: 'u1', item: 'เหล็ก', amount: 50, note: 'ฟาร์มมาวันนี้', status: 'Pending', date: new Date(Date.now() - 3600000).toISOString() },
+          { id: 'r2', type: 'เบิกของ', userId: 'u4', item: 'ปืน', amount: 1, note: 'เอาไปยึดพื้นที่', status: 'Pending', date: new Date(Date.now() - 1800000).toISOString() },
+          { id: 'r3', type: 'ส่งของ', userId: 'u5', item: 'ยา', amount: 20, note: 'ต้มเสร็จแล้ว', status: 'Approved', date: new Date(Date.now() - 86400000).toISOString() },
+        ];
+
+        const INITIAL_LOGS = [
+          { id: 'l1', date: new Date(Date.now() - 86400000).toISOString(), user: 'Admin Mike', action: 'อนุมัติการส่งของ', details: 'ยา x20 ถูกเพิ่มเข้าคลังแล้ว' },
+          { id: 'l2', date: new Date(Date.now() - 86400000 * 2).toISOString(), user: 'Leader Kenapa', action: 'ตั้งเป้าหมาย', details: 'ตั้งเป้าหมาย เงิน จำนวน 200,000$' },
+        ];
+
+        // --- ฟังก์ชันช่วยเหลือ ---
+        const formatMoney = (amount) => new Intl.NumberFormat('en-US').format(amount) + '$';
+        const formatDate = (dateStr) => {
+          const d = new Date(dateStr);
+          return `${d.toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'})} ${d.toLocaleDateString('th-TH', {day: '2-digit', month: 'short'})}`;
+        };
+
+        const formatDateOnly = (dateStr) => {
+          if (!dateStr) return '-';
+          const d = new Date(dateStr);
+          return d.toLocaleDateString('th-TH', {day: '2-digit', month: 'short', year: 'numeric'});
+        };
+
+        function App() {
+          // State หลักของแอป
+          const [currentUser, setCurrentUser] = useState(INITIAL_USERS[0]); // เริ่มต้นเป็น Leader
+          const [activeTab, setActiveTab] = useState('หน้าแรก');
+          const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+          
+          const [targetWeekName, setTargetWeekName] = useState('Week 1');
+          const [users, setUsers] = useState(INITIAL_USERS);
+          const [inventory, setInventory] = useState(INITIAL_INVENTORY);
+          const [gangMoney, setGangMoney] = useState(120000);
+          const [targets, setTargets] = useState(INITIAL_TARGETS);
+          const [heldItems, setHeldItems] = useState(INITIAL_HELD_ITEMS);
+          const [requests, setRequests] = useState(INITIAL_REQUESTS);
+          const [logs, setLogs] = useState(INITIAL_LOGS);
+
+          // สิทธิ์การเข้าถึง
+          const isLeader = currentUser.role === 'Leader';
+          const isAdmin = currentUser.role === 'Leader' || currentUser.role === 'Admin';
+
+          // --- ACTIONS ---
+          const addLog = (user, action, details) => {
+            const newLog = { id: Date.now().toString(), date: new Date().toISOString(), user, action, details };
+            setLogs(prev => [newLog, ...prev]);
+            console.log(`[DISCORD WEBHOOK] ${user} ${action}: ${details}`);
+          };
+
+          const handleRequestSubmit = (e, type, item, amount, note) => {
+            e.preventDefault();
+            const newReq = {
+              id: Date.now().toString(),
+              type,
+              userId: currentUser.id,
+              item,
+              amount: parseInt(amount),
+              note,
+              status: 'Pending',
+              date: new Date().toISOString()
+            };
+            setRequests(prev => [newReq, ...prev]);
+            addLog(currentUser.name, `ทำรายการ${type}`, `${item} x${amount} (สถานะ Pending)`);
+            alert('ส่งคำร้องเรียบร้อยแล้ว!');
+          };
+
+          const handleApproveRequest = (req) => {
+            const user = users.find(u => u.id === req.userId);
+            
+            if (req.type === 'ส่งของ') {
+              setInventory(prev => {
+                const existing = prev.find(i => i.name === req.item);
+                if (existing) return prev.map(i => i.name === req.item ? { ...i, quantity: i.quantity + req.amount } : i);
+                return [...prev, { id: Date.now().toString(), name: req.item, quantity: req.amount }];
+              });
+              setTargets(prev => prev.map(t => t.item === req.item ? { ...t, current: t.current + req.amount } : t));
+              setUsers(prev => prev.map(u => u.id === req.userId ? { ...u, contributed: u.contributed + req.amount } : u));
+              if (req.item === 'เงิน') setGangMoney(prev => prev + req.amount);
+              
+              addLog(`${currentUser.role} ${currentUser.name}`, 'ยืนยันรายการส่งของ', `${user.name} ส่ง ${req.item} x${req.amount} เข้าคลังแล้ว`);
+            } 
+            else if (req.type === 'เบิกของ') {
+              const invItem = inventory.find(i => i.name === req.item);
+              if (!invItem || invItem.quantity < req.amount) {
+                alert("มีของในคลังไม่เพียงพอ!");
+                return;
+              }
+              setInventory(prev => prev.map(i => i.name === req.item ? { ...i, quantity: i.quantity - req.amount } : i));
+              setHeldItems(prev => {
+                const existing = prev.find(h => h.userId === req.userId && h.item === req.item);
+                if (existing) return prev.map(h => h.id === existing.id ? { ...h, quantity: h.quantity + req.amount } : h);
+                return [...prev, { id: Date.now().toString(), userId: req.userId, item: req.item, quantity: req.amount }];
+              });
+              setUsers(prev => prev.map(u => u.id === req.userId ? { ...u, withdrawn: u.withdrawn + req.amount } : u));
+              if (req.item === 'เงิน') setGangMoney(prev => prev - req.amount);
+
+              addLog(`${currentUser.role} ${currentUser.name}`, 'อนุมัติการเบิกของ', `${user.name} เบิก ${req.item} x${req.amount} สำเร็จ`);
+            }
+            setRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'Approved' } : r));
+          };
+
+          const handleRejectRequest = (req) => {
+            const user = users.find(u => u.id === req.userId);
+            setRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'Rejected' } : r));
+            addLog(`${currentUser.role} ${currentUser.name}`, 'ปฏิเสธรายการ', `ไม่อนุมัติคำร้องขอ${req.type} ${req.item} x${req.amount} ของ ${user.name}`);
+          };
+
+          const handleSetTarget = (e, item, targetVal, deadline) => {
+            e.preventDefault();
+            setTargets(prev => {
+              const existing = prev.find(t => t.item === item);
+              if (existing) return prev.map(t => t.item === item ? { ...t, target: parseInt(targetVal), deadline } : t);
+              return [...prev, { id: Date.now().toString(), item, current: 0, target: parseInt(targetVal), deadline }];
+            });
+            addLog(currentUser.name, 'ตั้งค่าเป้าหมายใหม่', `เป้าหมายสัปดาห์ ${targetWeekName} ${item}: ${targetVal} ชิ้น`);
+          };
+
+          const handleAddInventoryItem = (e, name, color) => {
+            e.preventDefault();
+            if (!name) return;
+            const existing = inventory.find(i => i.name.toLowerCase() === name.toLowerCase());
+            if (existing) {
+               setInventory(prev => prev.map(i => i.id === existing.id ? {...i, color} : i));
+               addLog(currentUser.name, 'อัปเดตสีไอเทม', `อัปเดตสี ${name}`);
+            } else {
+               setInventory(prev => [...prev, { id: 'i'+Date.now(), name, quantity: 0, color }]);
+               addLog(currentUser.name, 'เพิ่มไอเทมใหม่', `เพิ่ม ${name} เข้าระบบคลัง`);
+            }
+          };
+
+          // --- SUB-COMPONENTS ---
+          const NavItem = ({ icon, label, tab }) => (
+            <button
+              onClick={() => { setActiveTab(tab); setIsMobileMenuOpen(false); }}
+              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+                activeTab === tab 
+                  ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]' 
+                  : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'
+              }`}
+            >
+              <i className={`${icon} fa-fw text-lg`}></i>
+              <span className="font-medium text-sm md:text-base">{label}</span>
+            </button>
+          );
+
+          const Card = ({ children, className = "" }) => (
+            <div className={`bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-xl shadow-xl overflow-hidden ${className}`}>
+              {children}
+            </div>
+          );
+
+          const StatusBadge = ({ status }) => {
+            const styles = {
+              Pending: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+              Approved: 'bg-green-500/10 text-green-400 border-green-500/20',
+              Rejected: 'bg-red-500/10 text-red-400 border-red-500/20',
+            };
+            const displayStatus = { Pending: 'รออนุมัติ', Approved: 'อนุมัติแล้ว', Rejected: 'ปฏิเสธ' };
+            return (
+              <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${styles[status]}`}>
+                {displayStatus[status]}
+              </span>
+            );
+          };
+
+          // --- VIEWS ---
+          const renderDashboard = () => (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
+                <Card className="p-6 bg-gradient-to-br from-slate-900 to-slate-900/50 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-4 opacity-20"><i className="fas fa-dollar-sign text-[64px] text-emerald-500"></i></div>
+                  <h3 className="text-slate-400 text-sm font-semibold uppercase tracking-wider">เงินแก๊ง</h3>
+                  <p className="text-4xl font-bold text-white mt-2 drop-shadow-md">{formatMoney(gangMoney)}</p>
+                  <div className="mt-4 flex items-center text-sm text-emerald-400">
+                    <i className="fas fa-chart-line text-base mr-1"></i> การเงินมั่นคง
+                  </div>
+                </Card>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card className="p-6">
+                  <h3 className="text-xl font-bold text-white mb-6 flex items-center">
+                    <i className="fas fa-bullseye mr-2 text-purple-500"></i> ส่งของ {targetWeekName}
+                  </h3>
+                  <div className="space-y-6">
+                    {targets.map(t => {
+                      const percent = Math.min(100, Math.round((t.current / t.target) * 100));
+                      return (
+                        <div key={t.id}>
+                          <div className="flex justify-between text-sm mb-1 items-center">
+                            <div>
+                              <span className="text-slate-200 font-bold text-base" style={{ color: inventory.find(i => i.name === t.item)?.color || '#e2e8f0' }}>{t.item}</span>
+                              <span className="text-xs text-slate-500 ml-2">กำหนด: {formatDateOnly(t.deadline)}</span>
+                            </div>
+                            <span className="text-slate-400">
+                              <span className="text-white font-bold">{t.current.toLocaleString()}</span> / {t.target.toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden">
+                            <div 
+                              className="bg-gradient-to-r from-purple-600 to-blue-500 h-3 rounded-full transition-all duration-1000 relative shadow-[0_0_10px_rgba(168,85,247,0.5)]"
+                              style={{ width: `${percent}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </Card>
+
+                <Card className="p-6">
+                  <h3 className="text-xl font-bold text-white mb-6 flex items-center">
+                    <i className="fas fa-chart-line mr-2 text-blue-500"></i> กิจกรรมล่าสุด
+                  </h3>
+                  <div className="space-y-4">
+                    {logs.slice(0, 5).map(log => (
+                      <div key={log.id} className="flex items-start space-x-3 pb-4 border-b border-slate-800/50 last:border-0 last:pb-0">
+                        <div className="bg-slate-800 w-8 h-8 flex justify-center items-center rounded-lg mt-1">
+                          <i className="fas fa-clock text-slate-400"></i>
+                        </div>
+                        <div>
+                          <p className="text-sm text-slate-200">
+                            <span className="font-semibold text-purple-400">{log.user}</span> {log.details}
+                          </p>
+                          <p className="text-xs text-slate-500 mt-1">{formatDate(log.date)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              </div>
+            </div>
+          );
+
+          const renderInventory = () => {
+            const [newItemName, setNewItemName] = useState('');
+            const [newItemColor, setNewItemColor] = useState('#a855f7');
+
+            return (
+              <div className="space-y-6">
+                <div className="flex justify-between items-end">
+                  <div>
+                    <h2 className="text-2xl font-bold text-white">คลังของแก๊ง</h2>
+                    <p className="text-slate-400 text-sm mt-1">ของส่วนกลางทั้งหมดที่ Admin ต้องดูแล</p>
+                  </div>
+                </div>
+                
+                {isAdmin && (
+                  <Card className="p-6">
+                    <h3 className="text-lg font-bold text-white mb-4">เพิ่ม / แก้ไขสีไอเทมในคลัง</h3>
+                    <form onSubmit={(e) => { handleAddInventoryItem(e, newItemName, newItemColor); setNewItemName(''); }} className="flex flex-col md:flex-row gap-4">
+                      <input 
+                        type="text" required value={newItemName} onChange={(e) => setNewItemName(e.target.value)}
+                        placeholder="ชื่อไอเทม..."
+                        className="flex-1 bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 focus:outline-none focus:border-purple-500"
+                      />
+                      <div className="flex items-center gap-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+                        <label className="text-sm text-slate-400">สีไอเทม:</label>
+                        <input 
+                          type="color" value={newItemColor} onChange={(e) => setNewItemColor(e.target.value)}
+                          className="w-8 h-8 rounded cursor-pointer bg-transparent border-none"
+                        />
+                      </div>
+                      <button type="submit" className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-6 rounded-lg transition-all whitespace-nowrap">
+                        บันทึกไอเทม
+                      </button>
+                    </form>
+                  </Card>
+                )}
+
+                <Card className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-800/50 text-slate-400 text-sm uppercase tracking-wider border-b border-slate-700">
+                        <th className="p-4 font-medium">ชื่อของ</th>
+                        <th className="p-4 font-medium">จำนวน</th>
+                        <th className="p-4 font-medium">หมวดหมู่</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/50">
+                      {inventory.map(item => (
+                        <tr key={item.id} className="hover:bg-slate-800/30 transition-colors">
+                          <td className="p-4 flex items-center font-bold text-base" style={{ color: item.color || '#e2e8f0' }}>
+                            <i className="fas fa-box text-base mr-3 opacity-70"></i> {item.name}
+                          </td>
+                          <td className="p-4 font-bold text-purple-400">{item.quantity.toLocaleString()}</td>
+                          <td className="p-4 text-slate-500 text-sm">ไอเทมทั่วไป</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </Card>
+
+                <h2 className="text-2xl font-bold text-white mt-8 mb-4">ของที่สมาชิกกำลังถืออยู่</h2>
+                <Card className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-800/50 text-slate-400 text-sm uppercase tracking-wider border-b border-slate-700">
+                        <th className="p-4 font-medium">ชื่อสมาชิก</th>
+                        <th className="p-4 font-medium">ของที่ถืออยู่</th>
+                        <th className="p-4 font-medium">จำนวน</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/50">
+                      {heldItems.length === 0 && <tr><td colSpan="3" className="p-4 text-center text-slate-500">ไม่มีสมาชิกคนไหนถือของอยู่</td></tr>}
+                      {heldItems.map(held => {
+                        const user = users.find(u => u.id === held.userId);
+                        const itemData = inventory.find(i => i.name === held.item);
+                        return (
+                          <tr key={held.id} className="hover:bg-slate-800/30 transition-colors">
+                            <td className="p-4 text-slate-200 flex items-center font-medium">
+                              <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center mr-3 font-bold text-xs">
+                                {user?.name.charAt(0)}
+                              </div>
+                              {user?.name || 'ไม่ทราบชื่อ'}
+                            </td>
+                            <td className="p-4 font-bold" style={{ color: itemData?.color || '#e2e8f0' }}>{held.item}</td>
+                            <td className="p-4 font-bold text-purple-400">{held.quantity.toLocaleString()}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </Card>
+              </div>
+            );
+          };
+
+          const renderRequests = () => {
+            const [reqType, setReqType] = useState('ส่งของ');
+            const [reqItem, setReqItem] = useState('เหล็ก');
+            const [reqAmount, setReqAmount] = useState('');
+            const [reqNote, setReqNote] = useState('');
+
+            const displayRequests = isAdmin ? requests : requests.filter(r => r.userId === currentUser.id);
+
+            return (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-1">
+                  <Card className="p-6 sticky top-6">
+                    <h3 className="text-xl font-bold text-white mb-6">สร้างคำร้องใหม่</h3>
+                    <form onSubmit={(e) => { handleRequestSubmit(e, reqType, reqItem, reqAmount, reqNote); setReqAmount(''); setReqNote(''); }} className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-400 mb-1">ประเภท</label>
+                        <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
+                          {['ส่งของ', 'เบิกของ'].map(t => (
+                            <button
+                              type="button" key={t} onClick={() => setReqType(t)}
+                              className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${reqType === t ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+                            >
+                              {t}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-slate-400 mb-1">เลือกของ</label>
+                        <select 
+                          value={reqItem} onChange={(e) => setReqItem(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 focus:outline-none focus:border-purple-500 transition-all font-medium"
+                        >
+                          <option value="เงิน">เงิน</option>
+                          {inventory.map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-slate-400 mb-1">จำนวน</label>
+                        <input 
+                          type="number" min="1" required value={reqAmount} onChange={(e) => setReqAmount(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 focus:outline-none focus:border-purple-500 transition-all"
+                          placeholder="เช่น 50"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-slate-400 mb-1">เหตุผล / หมายเหตุ</label>
+                        <textarea 
+                          required value={reqNote} onChange={(e) => setReqNote(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 h-24 resize-none focus:outline-none focus:border-purple-500 transition-all text-sm"
+                          placeholder="ทำไมถึงต้องการเบิก หรือได้ของมาจากไหน?"
+                        ></textarea>
+                      </div>
+
+                      <button type="submit" className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-4 rounded-lg transition-all shadow-[0_0_15px_rgba(168,85,247,0.3)] hover:shadow-[0_0_25px_rgba(168,85,247,0.5)] flex justify-center items-center">
+                        <i className="fas fa-paper-plane mr-2"></i> ยืนยันทำรายการ
+                      </button>
+                    </form>
+                  </Card>
+                </div>
+
+                <div className="lg:col-span-2">
+                  <Card className="overflow-hidden">
+                    <div className="p-6 border-b border-slate-800 bg-slate-800/20 flex justify-between items-center">
+                      <h3 className="text-xl font-bold text-white">{isAdmin ? 'ประวัติคำร้องทั้งหมด' : 'คำร้องของฉัน'}</h3>
+                    </div>
+                    <div className="divide-y divide-slate-800/50 max-h-[70vh] overflow-y-auto">
+                      {displayRequests.length === 0 && <p className="p-6 text-slate-500 text-center">ยังไม่มีประวัติทำรายการ</p>}
+                      {displayRequests.map(req => {
+                        const user = users.find(u => u.id === req.userId);
+                        return (
+                          <div key={req.id} className="p-6 hover:bg-slate-800/20 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div className="flex items-start space-x-4">
+                              <div className={`p-3 rounded-full mt-1 ${req.type === 'ส่งของ' ? 'bg-green-500/10 text-green-500' : 'bg-blue-500/10 text-blue-500'}`}>
+                                <i className="fas fa-right-left text-xl"></i>
+                              </div>
+                              <div>
+                                <div className="flex items-center space-x-3 mb-1">
+                                  <span className="font-bold text-slate-200">{user?.name}</span>
+                                  <span className="text-slate-500 text-sm">ขอ{req.type}</span>
+                                </div>
+                                <p className="text-lg text-white font-bold">{req.item} <span className="text-purple-400">x{req.amount}</span></p>
+                                <p className="text-sm text-slate-400 mt-1 bg-slate-900/50 p-2 rounded border border-slate-800">"{req.note}"</p>
+                                <p className="text-xs text-slate-500 mt-2">{formatDate(req.date)}</p>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col items-end space-y-3">
+                              <StatusBadge status={req.status} />
+                              {isAdmin && req.status === 'Pending' && (
+                                <div className="flex space-x-2 mt-2">
+                                  <button onClick={() => handleApproveRequest(req)} className="px-3 py-1.5 text-sm font-medium bg-green-500/20 hover:bg-green-500/40 text-green-400 rounded-lg transition-colors flex items-center" title="อนุมัติ">
+                                    <i className="fas fa-check mr-1"></i> ยืนยัน
+                                  </button>
+                                  <button onClick={() => handleRejectRequest(req)} className="px-3 py-1.5 text-sm font-medium bg-red-500/20 hover:bg-red-500/40 text-red-400 rounded-lg transition-colors flex items-center" title="ปฏิเสธ">
+                                    <i className="fas fa-circle-xmark mr-1"></i> ปฏิเสธ
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </Card>
+                </div>
+              </div>
+            );
+          };
+
+          const renderMembers = () => (
+            <div className="space-y-6">
+              <Card className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-800/50 text-slate-400 text-sm uppercase tracking-wider border-b border-slate-700">
+                      <th className="p-4 font-medium">ชื่อ</th>
+                      <th className="p-4 font-medium">ยศ (Rank)</th>
+                      <th className="p-4 font-medium">วันที่เข้าแก๊ง</th>
+                      <th className="p-4 font-medium text-right">ส่งของเข้า</th>
+                      <th className="p-4 font-medium text-right">เบิกของออก</th>
+                      {isLeader && <th className="p-4 font-medium text-center">จัดการ</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/50">
+                    {users.map(u => (
+                      <tr key={u.id} className="hover:bg-slate-800/30 transition-colors">
+                        <td className="p-4">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-bold shadow-lg">
+                              {u.name.charAt(0)}
+                            </div>
+                            <span className="font-bold text-slate-200">{u.name}</span>
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          <span className={`px-2.5 py-1 text-xs font-semibold rounded-full border ${
+                            u.role === 'Leader' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
+                            u.role === 'Admin' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                            'bg-slate-700/50 text-slate-300 border-slate-600'
+                          }`}>
+                            {u.role}
+                          </span>
+                        </td>
+                        <td className="p-4 text-slate-400 text-sm">{new Date(u.joinDate).toLocaleDateString('th-TH')}</td>
+                        <td className="p-4 text-right text-green-400 font-bold">+{u.contributed}</td>
+                        <td className="p-4 text-right text-red-400 font-bold">-{u.withdrawn}</td>
+                        {isLeader && (
+                          <td className="p-4 text-center">
+                            <button className="text-slate-500 hover:text-red-400 transition-colors" title="เตะออก (ระบบจำลอง)">
+                              <i className="fas fa-circle-xmark text-lg"></i>
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+            </div>
+          );
+
+          const renderLogs = () => {
+            const [searchTerm, setSearchTerm] = useState('');
+            const filteredLogs = logs.filter(l => 
+              l.user.toLowerCase().includes(searchTerm.toLowerCase()) || 
+              l.details.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              l.action.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+
+            return (
+              <Card className="p-6">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                  <h3 className="text-xl font-bold text-white">ประวัติการทำรายการ (Activity Logs)</h3>
+                  <div className="relative w-full md:w-64">
+                    <input 
+                      type="text" placeholder="ค้นหาชื่อ, ไอเทม, รายการ..." 
+                      value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-purple-500 transition-all"
+                    />
+                    <i className="fas fa-magnifying-glass absolute left-3 top-3 text-slate-500"></i>
+                  </div>
+                </div>
+
+                <div className="relative border-l border-slate-800 ml-4 space-y-8 pb-4">
+                  {filteredLogs.map((log) => (
+                    <div key={log.id} className="relative pl-6">
+                      <div className="absolute -left-[5px] top-1.5 w-[9px] h-[9px] rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.8)]"></div>
+                      <div className="bg-slate-800/30 border border-slate-800/50 rounded-lg p-4 hover:bg-slate-800/50 transition-colors">
+                        <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-2 mb-2">
+                          <div>
+                            <span className="font-bold text-purple-400 mr-2">{log.user}</span>
+                            <span className="text-slate-300 font-medium">{log.action}</span>
+                          </div>
+                          <span className="text-xs text-slate-500 flex items-center bg-slate-900 px-2 py-1 rounded">
+                            <i className="fas fa-clock mr-1"></i> {formatDate(log.date)}
+                          </span>
+                        </div>
+                        <p className="text-slate-400 text-sm">{log.details}</p>
+                      </div>
+                    </div>
+                  ))}
+                  {filteredLogs.length === 0 && <p className="text-slate-500 pl-6">ไม่พบประวัติการค้นหาของคุณ</p>}
+                </div>
+              </Card>
+            );
+          };
+
+          const renderTargets = () => {
+            const [tItem, setTItem] = useState('เหล็ก');
+            const [tVal, setTVal] = useState('');
+            const [tDeadline, setTDeadline] = useState('');
+
+            return (
+              <div className="max-w-2xl mx-auto space-y-6">
+                <Card className="p-6">
+                  <h3 className="text-xl font-bold text-white mb-2">ตั้งค่าระบบส่งของ</h3>
+                  <p className="text-slate-400 text-sm mb-6">กำหนดหัวข้อ Week และตั้งเป้าหมายพร้อมวันที่ส่งของ</p>
+                  
+                  <div className="mb-6 pb-6 border-b border-slate-800">
+                    <label className="block text-sm font-medium text-slate-400 mb-2">ชื่อ Week (เช่น Week 1, ส่งของต้นเดือน)</label>
+                    <input 
+                      type="text" value={targetWeekName} onChange={(e) => setTargetWeekName(e.target.value)}
+                      placeholder="เช่น Week 1"
+                      className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+
+                  <form onSubmit={(e) => { handleSetTarget(e, tItem, tVal, tDeadline); setTVal(''); setTDeadline(''); }} className="flex flex-col gap-4 mb-8">
+                    <div className="flex flex-col md:flex-row gap-4">
+                      <select 
+                        value={tItem} onChange={(e) => setTItem(e.target.value)}
+                        className="flex-1 bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 focus:outline-none focus:border-purple-500 font-medium"
+                      >
+                        <option value="เงิน">เงิน</option>
+                        {inventory.map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
+                      </select>
+                      <input 
+                        type="number" min="1" required value={tVal} onChange={(e) => setTVal(e.target.value)}
+                        placeholder="ระบุจำนวนเป้าหมาย..."
+                        className="flex-1 bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-3 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                    <div className="flex flex-col md:flex-row gap-4">
+                      <div className="flex-1">
+                        <input 
+                          type="date" required value={tDeadline} onChange={(e) => setTDeadline(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 text-slate-400 rounded-lg p-3 focus:outline-none focus:border-purple-500"
+                        />
+                      </div>
+                      <button type="submit" className="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-6 rounded-lg transition-all whitespace-nowrap">
+                        บันทึกเป้าหมาย
+                      </button>
+                    </div>
+                  </form>
+
+                  <div className="space-y-4">
+                    {targets.map(t => (
+                      <div key={t.id} className="flex justify-between items-center bg-slate-800/40 p-4 rounded-lg border border-slate-800">
+                        <div>
+                          <h4 className="font-bold text-lg" style={{ color: inventory.find(i => i.name === t.item)?.color || '#e2e8f0' }}>{t.item}</h4>
+                          <p className="text-sm text-slate-500">เก็บได้แล้ว: {t.current.toLocaleString()}</p>
+                          <p className="text-xs text-slate-400 mt-1">กำหนด: {formatDateOnly(t.deadline)}</p>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-purple-400 text-xl">{t.target.toLocaleString()}</div>
+                          <button 
+                            onClick={() => setTargets(prev => prev.filter(x => x.id !== t.id))}
+                            className="text-xs text-red-400 hover:text-red-300 mt-2"
+                          >
+                            ลบเป้าหมาย
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              </div>
+            );
+          };
+
+          return (
+            <div className="flex h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden selection:bg-purple-500/30">
+              {isMobileMenuOpen && (
+                <div 
+                  className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                />
+              )}
+
+              <aside className={`fixed inset-y-0 left-0 w-64 bg-slate-900 border-r border-slate-800 shadow-2xl z-50 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:flex lg:flex-col ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800 bg-slate-900/50">
+                  <div className="flex items-center space-x-2">
+                    <i className="fas fa-shield-halved text-2xl text-purple-500 drop-shadow-[0_0_8px_rgba(168,85,247,0.8)]"></i>
+                    <span className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400 tracking-wider">
+                      NEXUS RP
+                    </span>
+                  </div>
+                  <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden text-slate-400 hover:text-white">
+                    <i className="fas fa-xmark text-2xl"></i>
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto py-6 px-4 space-y-2">
+                  <NavItem icon="fas fa-house" label="หน้าแรก" tab="หน้าแรก" />
+                  <NavItem icon="fas fa-box" label="คลังของ" tab="คลังของ" />
+                  <NavItem icon="fas fa-right-left" label="เบิก / ส่งของ" tab="เบิก / ส่งของ" />
+                  <NavItem icon="fas fa-users" label="รายชื่อสมาชิก" tab="สมาชิก" />
+                  <NavItem icon="fas fa-chart-line" label="ประวัติรายการ (Logs)" tab="ประวัติ" />
+                  {isLeader && <NavItem icon="fas fa-bullseye" label="จัดการเป้าหมาย" tab="เป้าหมาย" />}
+                </div>
+
+                <div className="p-4 border-t border-slate-800 bg-slate-900/50">
+                  <div className="flex items-center space-x-3 mb-4 p-2 rounded-lg bg-slate-800/50">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-purple-600 to-blue-600 flex items-center justify-center font-bold text-white shadow-md">
+                      {currentUser.name.charAt(0)}
+                    </div>
+                    <div className="overflow-hidden">
+                      <p className="text-sm font-bold text-white truncate">{currentUser.name}</p>
+                      <p className="text-xs text-purple-400 font-medium">{currentUser.role}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="text-xs text-slate-500 mb-1">ทดสอบเปลี่ยน Role:</div>
+                  <select 
+                    value={currentUser.id}
+                    onChange={(e) => {
+                      const u = users.find(x => x.id === e.target.value);
+                      setCurrentUser(u);
+                      if (u.role !== 'Leader' && activeTab === 'เป้าหมาย') setActiveTab('หน้าแรก');
+                    }}
+                    className="w-full bg-slate-950 border border-slate-700 text-slate-300 rounded p-1.5 text-sm focus:outline-none focus:border-purple-500"
+                  >
+                    {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
+                  </select>
+                </div>
+              </aside>
+
+              <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
+                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/20 rounded-full blur-[120px] pointer-events-none"></div>
+                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-900/10 rounded-full blur-[120px] pointer-events-none"></div>
+
+                <header className="h-16 flex items-center justify-between px-4 lg:px-8 border-b border-slate-800/60 bg-slate-950/50 backdrop-blur-md z-10">
+                  <div className="flex items-center">
+                    <button onClick={() => setIsMobileMenuOpen(true)} className="mr-4 lg:hidden text-slate-400 hover:text-white transition-colors">
+                      <i className="fas fa-bars text-2xl"></i>
+                    </button>
+                    <h1 className="text-xl font-bold text-slate-200">{activeTab}</h1>
+                  </div>
+                  <div className="flex items-center space-x-4 text-sm">
+                    <div className="hidden md:flex items-center text-slate-400 bg-slate-900/80 px-3 py-1.5 rounded-full border border-slate-800">
+                      <div className="w-2 h-2 rounded-full bg-green-500 mr-2 shadow-[0_0_5px_rgba(34,197,94,0.8)]"></div>
+                      ระบบออนไลน์
+                    </div>
+                  </div>
+                </header>
+
+                <div className="flex-1 overflow-y-auto p-4 lg:p-8 z-10 custom-scrollbar">
+                  <div className="max-w-7xl mx-auto">
+                    {activeTab === 'หน้าแรก' && renderDashboard()}
+                    {activeTab === 'คลังของ' && renderInventory()}
+                    {activeTab === 'เบิก / ส่งของ' && renderRequests()}
+                    {activeTab === 'สมาชิก' && renderMembers()}
+                    {activeTab === 'ประวัติ' && renderLogs()}
+                    {activeTab === 'เป้าหมาย' && isLeader && renderTargets()}
+                  </div>
+                </div>
+              </main>
+            </div>
+          );
+        }
+
+        // ทำให้ React ไปแสดงผลบนหน้าเว็บ
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
