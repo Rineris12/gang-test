@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FiveM - Gang Management System</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Prompt', 'sans-serif'],
+                    },
+                    colors: {
+                        dark: '#121212',
+                        darker: '#0a0a0a',
+                        card: '#1e1e1e',
+                        primary: '#3b82f6',
+                        accent: '#8b5cf6'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #0a0a0a; color: #e5e5e5; }
+        .glass-panel {
+            background: rgba(30, 30, 30, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .neon-glow:hover {
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+            border-color: rgba(59, 130, 246, 0.8);
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #121212; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // --- MOCK DATA ---
+        const CATEGORIES = [
+            { id: 'gang', name: 'Gang', icon: 'fa-mask' },
+            { id: 'police', name: 'Police', icon: 'fa-shield-halved' },
+            { id: 'ems', name: 'EMS', icon: 'fa-truck-medical' },
+            { id: 'cartel', name: 'Cartel', icon: 'fa-skull' },
+            { id: 'mc', name: 'Motorcycle Club', icon: 'fa-motorcycle' },
+            { id: 'business', name: 'Business', icon: 'fa-briefcase' }
+        ];
+
+        const ROLES = [
+            { id: 'leader', name: 'Leader', color: 'text-yellow-400', bg: 'bg-yellow-400/10', border: 'border-yellow-400/30' },
+            { id: 'co-leader', name: 'Co-Leader', color: 'text-orange-400', bg: 'bg-orange-400/10', border: 'border-orange-400/30' },
+            { id: 'officer', name: 'Officer', color: 'text-blue-400', bg: 'bg-blue-400/10', border: 'border-blue-400/30' },
+            { id: 'member', name: 'Member', color: 'text-gray-300', bg: 'bg-gray-500/10', border: 'border-gray-500/30' }
+        ];
+
+        const INITIAL_GANGS = [
+            { id: 1, name: 'Ballas', category: 'gang', logo: '🟣', desc: 'แก๊งที่คุมโซน Grove Street มีอิทธิพลด้านมืดสูง', warWins: 12, warLosses: 3, rules: 'ห้ามยิงกันเองในแก๊ง, ห้ามปล้นในโซนเซฟ' },
+            { id: 2, name: 'LSPD', category: 'police', logo: '👮', desc: 'กรมตำรวจ Los Santos', warWins: 0, warLosses: 0, rules: 'ปฏิบัติตามกฎหมายอย่างเคร่งครัด' },
+            { id: 3, name: 'Sons of Anarchy', category: 'mc', logo: '🏍️', desc: 'คลับมอเตอร์ไซค์ที่ใหญ่ที่สุด', warWins: 8, warLosses: 5, rules: 'เคารพเสื้อคลับ, ขี่เป็นขบวน' }
+        ];
+
+        const INITIAL_MEMBERS = [
+            { id: 1, name: 'John_Doe', gangId: 1, role: 'leader', joinDate: '2023-01-15', cooldownUntil: null },
+            { id: 2, name: 'Jane_Smith', gangId: 1, role: 'co-leader', joinDate: '2023-02-20', cooldownUntil: null },
+            { id: 3, name: 'Mike_W', gangId: 1, role: 'member', joinDate: '2023-05-10', cooldownUntil: '2026-03-25T12:00:00Z' }, // ติดดีเลย์ออกแก๊ง
+            { id: 4, name: 'Officer_Dan', gangId: 2, role: 'leader', joinDate: '2022-11-01', cooldownUntil: null },
+            { id: 5, name: 'Jax_Teller', gangId: 3, role: 'leader', joinDate: '2023-03-05', cooldownUntil: null }
+        ];
+
+        const INITIAL_BLACKLIST = [
+            { name: 'Toxic_Player01', reason: 'ใช้โปรแกรมช่วยเล่น (Aimbot)', date: '2023-10-01' },
+            { name: 'RDM_Master', reason: 'RDM ต่อเนื่องและก่อกวนเซิร์ฟเวอร์', date: '2023-11-15' }
+        ];
+
+        const SERVER_RULES = [
+            { title: 'ห้าม RDM (Random Deathmatch)', desc: 'ห้ามฆ่าผู้เล่นอื่นโดยไม่มีสตอรี่หรือเหตุผลที่สมควร' },
+            { title: 'ห้าม VDM (Vehicle Deathmatch)', desc: 'ห้ามใช้ยานพาหนะชนผู้เล่นอื่นโดยจงใจเพื่อฆ่า' },
+            { title: 'ห้าม Meta Gaming', desc: 'ห้ามนำข้อมูลนอกเกม (OOC) มาใช้ในเกม (IC) เช่น ดูสตรีมเพื่อหาตำแหน่ง' },
+            { title: 'ห้าม Power Gaming', desc: 'ห้ามกระทำการที่เหนือมนุษย์หรือบังคับบทบาทผู้อื่นโดยไม่ให้โอกาสตอบโต้' },
+            { title: 'กฎการตั้งชื่อ', desc: 'ห้ามตั้งชื่อเลียนแบบสตรีมเมอร์, แอดมิน หรือสมาชิกแก๊งอื่นเพื่อแอบอ้าง' },
+            { title: 'ดีเลย์ออกแก๊ง (Cooldown)', desc: 'เมื่อออกจากแก๊ง จะไม่สามารถเข้าแก๊งใหม่หรือทำอาชีพผิดกฎหมายได้เป็นเวลา 3 วัน (OOC)' }
+        ];
+
+        // --- MAIN APP COMPONENT ---
+        function App() {
+            const [activeTab, setActiveTab] = useState('home');
+            const [selectedCategory, setSelectedCategory] = useState(null);
+            const [selectedGang, setSelectedGang] = useState(null);
+            const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+            // State Data
+            const [gangs, setGangs] = useState(INITIAL_GANGS);
+            const [members, setMembers] = useState(INITIAL_MEMBERS);
+            const [blacklist, setBlacklist] = useState(INITIAL_BLACKLIST);
+
+            // Helpers
+            const getGangMembers = (gangId) => members.filter(m => m.gangId === gangId);
+            const getMemberRoleInfo = (roleId) => ROLES.find(r => r.id === roleId) || ROLES[3];
+            const isCooldownActive = (dateString) => {
+                if (!dateString) return false;
+                return new Date(dateString) > new Date();
+            };
+
+            // Navigation Handler
+            const navigate = (tab, data = null) => {
+                setActiveTab(tab);
+                setIsMobileMenuOpen(false);
+                if (tab === 'gangList') setSelectedCategory(data);
+                if (tab === 'gangProfile') setSelectedGang(data);
+                window.scrollTo(0, 0);
+            };
+
+            // --- VIEWS ---
+
+            const HomeView = () => (
+                <div className="space-y-8 animate-fade-in">
+                    <div className="text-center py-10 glass-panel rounded-2xl relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500"></div>
+                        <h1 className="text-4xl md:text-5xl font-bold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
+                            LOS SANTOS DIRECTORY
+                        </h1>
+                        <p className="text-gray-400 text-lg max-w-2xl mx-auto px-4">
+                            ระบบจัดการรายชื่อแก๊งและหน่วยงาน ค้นหาข้อมูล ตรวจสอบสถานะ และอัปเดตข้อมูลแบบเรียลไทม์
+                        </p>
+                    </div>
+
+                    <div>
+                        <h2 className="text-2xl font-semibold mb-6 flex items-center gap-2">
+                            <i className="fa-solid fa-layer-group text-primary"></i> หมวดหมู่ทั้งหมด
+                        </h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {CATEGORIES.map(cat => (
+                                <div 
+                                    key={cat.id} 
+                                    onClick={() => navigate('gangList', cat.id)}
+                                    className="glass-panel p-6 rounded-xl cursor-pointer neon-glow transition-all duration-300 group flex items-center gap-4"
+                                >
+                                    <div className="w-16 h-16 rounded-full bg-dark flex items-center justify-center text-2xl text-primary group-hover:scale-110 transition-transform">
+                                        <i className={`fa-solid ${cat.icon}`}></i>
+                                    </div>
+                                    <div>
+                                        <h3 className="text-xl font-bold">{cat.name}</h3>
+                                        <p className="text-sm text-gray-500">
+                                            {gangs.filter(g => g.category === cat.id).length} สังกัด
+                                        </p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+
+            const GangListView = () => {
+                const categoryInfo = CATEGORIES.find(c => c.id === selectedCategory);
+                const filteredGangs = gangs.filter(g => g.category === selectedCategory);
+
+                return (
+                    <div className="animate-fade-in">
+                        <button onClick={() => navigate('home')} className="mb-6 text-gray-400 hover:text-white flex items-center gap-2 transition-colors">
+                            <i className="fa-solid fa-arrow-left"></i> กลับไปหน้าหมวดหมู่
+                        </button>
+                        
+                        <h2 className="text-3xl font-bold mb-8 flex items-center gap-3">
+                            <i className={`fa-solid ${categoryInfo?.icon} text-primary`}></i> 
+                            รายชื่อ {categoryInfo?.name}
+                        </h2>
+
+                        {filteredGangs.length === 0 ? (
+                            <div className="text-center py-20 glass-panel rounded-xl text-gray-500">
+                                <i className="fa-solid fa-folder-open text-4xl mb-3 opacity-50"></i>
+                                <p>ยังไม่มีข้อมูลในหมวดหมู่นี้</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {filteredGangs.map(gang => {
+                                    const memberCount = getGangMembers(gang.id).length;
+                                    return (
+                                        <div 
+                                            key={gang.id}
+                                            onClick={() => navigate('gangProfile', gang)}
+                                            className="glass-panel rounded-xl overflow-hidden cursor-pointer neon-glow transition-all duration-300 flex flex-col h-full"
+                                        >
+                                            <div className="p-6 flex-grow">
+                                                <div className="flex items-center gap-4 mb-4">
+                                                    <div className="w-16 h-16 rounded-lg bg-dark flex items-center justify-center text-3xl shadow-inner">
+                                                        {gang.logo}
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="text-xl font-bold text-white">{gang.name}</h3>
+                                                        <span className="inline-block px-2 py-1 bg-gray-800 rounded text-xs text-gray-400 mt-1">
+                                                            <i className="fa-solid fa-users mr-1"></i> {memberCount} สมาชิก
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <p className="text-gray-400 text-sm line-clamp-2">{gang.desc}</p>
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        )}
+                    </div>
+                );
+            };
+
+            const GangProfileView = () => {
+                if (!selectedGang) return null;
+                const gangMembers = getGangMembers(selectedGang.id);
+                
+                // เรียงลำดับตามตำแหน่ง
+                const sortedMembers = [...gangMembers].sort((a, b) => {
+                    const roleOrder = { 'leader': 1, 'co-leader': 2, 'officer': 3, 'member': 4 };
+                    return roleOrder[a.role] - roleOrder[b.role];
+                });
+
+                return (
+                    <div className="animate-fade-in space-y-6">
+                        <button onClick={() => navigate('gangList', selectedGang.category)} className="text-gray-400 hover:text-white flex items-center gap-2">
+                            <i className="fa-solid fa-arrow-left"></i> ย้อนกลับ
+                        </button>
+
+                        <div className="glass-panel rounded-2xl p-6 md:p-10 flex flex-col md:flex-row gap-8 items-start relative overflow-hidden">
+                            <div className="w-32 h-32 md:w-48 md:h-48 flex-shrink-0 bg-dark rounded-2xl flex items-center justify-center text-6xl shadow-xl border border-gray-700 z-10">
+                                {selectedGang.logo}
+                            </div>
+                            <div className="z-10 flex-grow">
+                                <h1 className="text-4xl md:text-5xl font-bold mb-2">{selectedGang.name}</h1>
+                                <div className="flex flex-wrap gap-3 mb-4">
+                                    <span className="px-3 py-1 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-full text-sm">
+                                        หมวดหมู่: {CATEGORIES.find(c => c.id === selectedGang.category)?.name}
+                                    </span>
+                                    <span className="px-3 py-1 bg-gray-800 text-gray-300 rounded-full text-sm">
+                                        สมาชิกทั้งหมด: {gangMembers.length} คน
+                                    </span>
+                                </div>
+                                <p className="text-gray-400 leading-relaxed mb-6">{selectedGang.desc}</p>
+                                
+                                {selectedGang.category === 'gang' || selectedGang.category === 'mc' || selectedGang.category === 'cartel' ? (
+                                    <div className="flex gap-4 p-4 bg-dark rounded-xl w-fit border border-gray-800">
+                                        <div className="text-center px-4 border-r border-gray-700">
+                                            <div className="text-2xl font-bold text-green-500">{selectedGang.warWins}</div>
+                                            <div className="text-xs text-gray-500">War Wins</div>
+                                        </div>
+                                        <div className="text-center px-4">
+                                            <div className="text-2xl font-bold text-red-500">{selectedGang.warLosses}</div>
+                                            <div className="text-xs text-gray-500">War Losses</div>
+                                        </div>
+                                    </div>
+                                ): null}
+                            </div>
+                            
+                            {/* Decorative background element */}
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-primary rounded-full filter blur-[100px] opacity-10 pointer-events-none"></div>
+                        </div>
+
+                        {/* กฎของแก๊ง (ถ้ามี) */}
+                        {selectedGang.rules && (
+                            <div className="glass-panel rounded-xl p-6 border-l-4 border-l-primary">
+                                <h3 className="text-xl font-bold mb-2 flex items-center gap-2">
+                                    <i className="fa-solid fa-scroll text-primary"></i> กฎประจำสังกัด
+                                </h3>
+                                <p className="text-gray-300">{selectedGang.rules}</p>
+                            </div>
+                        )}
+
+                        {/* รายชื่อสมาชิก */}
+                        <div>
+                            <h3 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                                <i className="fa-solid fa-users-viewfinder text-primary"></i> รายชื่อสมาชิก
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {sortedMembers.map(member => {
+                                    const roleInfo = getMemberRoleInfo(member.role);
+                                    const onCooldown = isCooldownActive(member.cooldownUntil);
+                                    
+                                    return (
+                                        <div key={member.id} className="glass-panel p-4 rounded-xl flex items-center justify-between group hover:bg-white/5 transition-colors">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-10 h-10 rounded-full bg-dark flex items-center justify-center text-gray-400">
+                                                    <i className="fa-solid fa-user"></i>
+                                                </div>
+                                                <div>
+                                                    <div className="font-semibold text-white flex items-center gap-2">
+                                                        {member.name}
+                                                        {onCooldown && (
+                                                            <span title={`ติดดีเลย์ถึง ${new Date(member.cooldownUntil).toLocaleDateString('th-TH')}`} className="text-red-500 text-xs flex items-center">
+                                                                <i className="fa-solid fa-clock mr-1"></i> ดีเลย์
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className={`text-xs px-2 py-0.5 mt-1 rounded-md inline-block border ${roleInfo.color} ${roleInfo.bg} ${roleInfo.border}`}>
+                                                        {roleInfo.name}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const SearchView = () => {
+                const [searchTerm, setSearchTerm] = useState('');
+                
+                const searchResults = useMemo(() => {
+                    if (!searchTerm.trim()) return [];
+                    const term = searchTerm.toLowerCase();
+                    return members.filter(m => m.name.toLowerCase().includes(term));
+                }, [searchTerm, members]);
+
+                const blacklistResults = useMemo(() => {
+                    if (!searchTerm.trim()) return [];
+                    const term = searchTerm.toLowerCase();
+                    return blacklist.filter(b => b.name.toLowerCase().includes(term));
+                }, [searchTerm, blacklist]);
+
+                return (
+                    <div className="animate-fade-in max-w-4xl mx-auto space-y-6">
+                        <div className="text-center py-8">
+                            <h2 className="text-3xl font-bold mb-2">ตรวจสอบรายชื่อผู้เล่น</h2>
+                            <p className="text-gray-400">ค้นหาประวัติการอยู่แก๊ง, การติดดีเลย์ หรือสถานะแบล็คลิสต์ ป้องกันการแอบอ้าง</p>
+                        </div>
+
+                        <div className="relative">
+                            <input 
+                                type="text" 
+                                placeholder="พิมพ์ชื่อผู้เล่นที่ต้องการค้นหา (เช่น John_Doe)..." 
+                                className="w-full bg-dark border border-gray-700 rounded-xl px-6 py-4 pl-14 text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-lg shadow-lg"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                            <i className="fa-solid fa-magnifying-glass absolute left-6 top-5 text-gray-400 text-xl"></i>
+                        </div>
+
+                        {searchTerm && (
+                            <div className="space-y-4">
+                                {/* ผลการค้นหาในแบล็คลิสต์ (สำคัญสุด) */}
+                                {blacklistResults.length > 0 && (
+                                    <div className="glass-panel border-red-500/50 rounded-xl p-6 bg-red-900/10">
+                                        <h3 className="text-xl font-bold text-red-400 mb-4 flex items-center gap-2">
+                                            <i className="fa-solid fa-triangle-exclamation"></i> พบในรายชื่อ Blacklist!
+                                        </h3>
+                                        {blacklistResults.map((b, idx) => (
+                                            <div key={idx} className="bg-dark p-4 rounded-lg border border-red-500/30 mb-2 last:mb-0">
+                                                <div className="font-bold text-lg text-white">{b.name}</div>
+                                                <div className="text-red-400 text-sm mt-1">สาเหตุ: {b.reason}</div>
+                                                <div className="text-gray-500 text-xs mt-2">วันที่เพิ่ม: {b.date}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* ผลการค้นหาผู้เล่นปกติ */}
+                                {searchResults.length > 0 ? (
+                                    <div className="glass-panel rounded-xl overflow-hidden">
+                                        <div className="p-4 bg-white/5 border-b border-white/5 font-semibold">
+                                            พบข้อมูลผู้เล่น ({searchResults.length} รายการ)
+                                        </div>
+                                        <div className="divide-y divide-white/5">
+                                            {searchResults.map(member => {
+                                                const gang = gangs.find(g => g.id === member.gangId);
+                                                const onCooldown = isCooldownActive(member.cooldownUntil);
+                                                return (
+                                                    <div key={member.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                                        <div>
+                                                            <div className="font-bold text-lg text-white">{member.name}</div>
+                                                            <div className="text-sm text-gray-400 mt-1 flex items-center gap-2">
+                                                                สังกัด: <span className="text-primary">{gang ? gang.name : 'ไม่มีสังกัด'}</span>
+                                                                <span className="text-xs px-2 py-0.5 bg-gray-800 rounded">{getMemberRoleInfo(member.role).name}</span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            {onCooldown ? (
+                                                                <div className="text-red-400 bg-red-400/10 px-3 py-2 rounded-lg border border-red-400/20 text-sm flex items-center gap-2">
+                                                                    <i className="fa-solid fa-clock"></i> ติดดีเลย์ถึง {new Date(member.cooldownUntil).toLocaleDateString('th-TH')}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="text-green-400 bg-green-400/10 px-3 py-2 rounded-lg border border-green-400/20 text-sm flex items-center gap-2">
+                                                                    <i className="fa-solid fa-check-circle"></i> สถานะปกติ
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    searchTerm && blacklistResults.length === 0 && (
+                                        <div className="text-center py-10 glass-panel rounded-xl text-gray-400">
+                                            ไม่พบข้อมูลผู้เล่นชื่อ "{searchTerm}" ในระบบ (สามารถรับเข้าแก๊งได้)
+                                        </div>
+                                    )
+                                )}
+                            </div>
+                        )}
+                    </div>
+                );
+            };
+
+            const RulesView = () => (
+                <div className="animate-fade-in max-w-4xl mx-auto">
+                    <div className="text-center mb-10">
+                        <h2 className="text-3xl font-bold mb-2 flex justify-center items-center gap-3">
+                            <i className="fa-solid fa-book-open text-primary"></i> กฎหมายของเมือง (Server Rules)
+                        </h2>
+                        <p className="text-gray-400">โปรดอ่านและทำความเข้าใจเพื่อการเล่นร่วมกันอย่างมีความสุข</p>
+                    </div>
+
+                    <div className="space-y-4">
+                        {SERVER_RULES.map((rule, idx) => (
+                            <div key={idx} className="glass-panel p-6 rounded-xl flex gap-4 items-start">
+                                <div className="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center flex-shrink-0 font-bold border border-primary/30">
+                                    {idx + 1}
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-bold text-white mb-2">{rule.title}</h3>
+                                    <p className="text-gray-400 leading-relaxed">{rule.desc}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+
+            const TopGangView = () => {
+                // เรียงลำดับแก๊งตามจำนวนสมาชิก (จำลองความนิยม)
+                const sortedGangs = [...gangs].map(g => ({
+                    ...g,
+                    memberCount: getGangMembers(g.id).length
+                })).sort((a, b) => b.memberCount - a.memberCount);
+
+                return (
+                    <div className="animate-fade-in max-w-5xl mx-auto">
+                        <div className="text-center mb-10">
+                            <h2 className="text-3xl font-bold mb-2 flex justify-center items-center gap-3">
+                                <i className="fa-solid fa-trophy text-yellow-400"></i> Top Ranking
+                            </h2>
+                            <p className="text-gray-400">จัดอันดับสังกัดที่มีจำนวนสมาชิกและการเคลื่อนไหวมากที่สุด</p>
+                        </div>
+
+                        <div className="glass-panel rounded-2xl overflow-hidden">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="bg-white/5 border-b border-white/5 text-gray-400 text-sm uppercase tracking-wider">
+                                        <th className="p-4 w-16 text-center">อันดับ</th>
+                                        <th className="p-4">ชื่อสังกัด</th>
+                                        <th className="p-4">หมวดหมู่</th>
+                                        <th className="p-4 text-center">จำนวนสมาชิก</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                    {sortedGangs.map((gang, idx) => (
+                                        <tr key={gang.id} className="hover:bg-white/5 transition-colors group cursor-pointer" onClick={() => navigate('gangProfile', gang)}>
+                                            <td className="p-4 text-center font-bold text-lg">
+                                                {idx === 0 ? <i className="fa-solid fa-crown text-yellow-400"></i> :
+                                                 idx === 1 ? <i className="fa-solid fa-medal text-gray-300"></i> :
+                                                 idx === 2 ? <i className="fa-solid fa-medal text-amber-600"></i> :
+                                                 <span className="text-gray-500">{idx + 1}</span>}
+                                            </td>
+                                            <td className="p-4 flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded bg-dark flex items-center justify-center text-xl">{gang.logo}</div>
+                                                <span className="font-bold text-white group-hover:text-primary transition-colors">{gang.name}</span>
+                                            </td>
+                                            <td className="p-4 text-gray-400">
+                                                <span className="px-2 py-1 bg-gray-800 rounded text-xs">
+                                                    {CATEGORIES.find(c => c.id === gang.category)?.name}
+                                                </span>
+                                            </td>
+                                            <td className="p-4 text-center">
+                                                <span className="font-bold text-white bg-white/10 px-3 py-1 rounded-full">
+                                                    {gang.memberCount}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                );
+            };
+
+            // --- ADMIN PANEL (Mock Frontend Logic) ---
+            const AdminPanelView = () => {
+                const [adminTab, setAdminTab] = useState('members');
+                const [message, setMessage] = useState({ type: '', text: '' });
+
+                // Form States
+                const [newMemberName, setNewMemberName] = useState('');
+                const [selectedGangForMember, setSelectedGangForMember] = useState(gangs[0]?.id || '');
+                const [selectedRole, setSelectedRole] = useState('member');
+
+                const showMessage = (type, text) => {
+                    setMessage({ type, text });
+                    setTimeout(() => setMessage({ type: '', text: '' }), 3000);
+                };
+
+                const handleAddMember = (e) => {
+                    e.preventDefault();
+                    const nameTrimmed = newMemberName.trim();
+                    
+                    if (!nameTrimmed) return;
+
+                    // 1. Check if name exists
+                    const nameExists = members.some(m => m.name.toLowerCase() === nameTrimmed.toLowerCase());
+                    if (nameExists) {
+                        showMessage('error', `ชื่อ ${nameTrimmed} มีอยู่ในระบบแล้ว! ป้องกันการซ้ำซ้อน`);
+                        return;
+                    }
+
+                    // 2. Check Blacklist
+                    const isBlacklisted = blacklist.some(b => b.name.toLowerCase() === nameTrimmed.toLowerCase());
+                    if (isBlacklisted) {
+                        showMessage('error', `ผู้เล่น ${nameTrimmed} อยู่ใน Blacklist ไม่สามารถเพิ่มได้`);
+                        return;
+                    }
+
+                    // Add to state
+                    const newMember = {
+                        id: Date.now(),
+                        name: nameTrimmed,
+                        gangId: parseInt(selectedGangForMember),
+                        role: selectedRole,
+                        joinDate: new Date().toISOString().split('T')[0],
+                        cooldownUntil: null
+                    };
+
+                    setMembers([...members, newMember]);
+                    showMessage('success', `เพิ่มผู้เล่น ${nameTrimmed} เข้าสู่ระบบสำเร็จ`);
+                    setNewMemberName('');
+                };
+
+                const handleKickMember = (memberId, name) => {
+                    if (confirm(`คุณแน่ใจหรือไม่ที่จะเตะ ${name} ออกจากแก๊ง? (จะติดดีเลย์ 3 วัน)`)) {
+                        // จำลองการตั้งดีเลย์ 3 วัน
+                        const cooldownDate = new Date();
+                        cooldownDate.setDate(cooldownDate.getDate() + 3);
+                        
+                        setMembers(members.map(m => 
+                            m.id === memberId 
+                            ? { ...m, gangId: null, cooldownUntil: cooldownDate.toISOString() } 
+                            : m
+                        ));
+                        showMessage('success', `นำ ${name} ออกจากสังกัดและตั้งดีเลย์ 3 วันเรียบร้อยแล้ว`);
+                    }
+                };
+
+                return (
+                    <div className="animate-fade-in">
+                        <div className="flex flex-col md:flex-row items-center justify-between mb-8 gap-4">
+                            <div>
+                                <h2 className="text-3xl font-bold flex items-center gap-3">
+                                    <i className="fa-solid fa-shield-halved text-red-500"></i> Admin Control Panel
+                                </h2>
+                                <p className="text-gray-400 mt-1">ระบบจัดการหลังบ้าน อัปเดตข้อมูล Real-time</p>
+                            </div>
+                            <div className="bg-dark p-1 rounded-xl flex gap-1 border border-gray-800">
+                                <button onClick={() => setAdminTab('members')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${adminTab === 'members' ? 'bg-primary text-white' : 'text-gray-400 hover:text-white'}`}>จัดการสมาชิก</button>
+                                <button onClick={() => setAdminTab('gangs')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${adminTab === 'gangs' ? 'bg-primary text-white' : 'text-gray-400 hover:text-white'}`}>จัดการแก๊ง</button>
+                            </div>
+                        </div>
+
+                        {message.text && (
+                            <div className={`p-4 rounded-xl mb-6 flex items-center gap-3 animate-fade-in ${message.type === 'error' ? 'bg-red-500/10 border border-red-500/30 text-red-400' : 'bg-green-500/10 border border-green-500/30 text-green-400'}`}>
+                                <i className={`fa-solid ${message.type === 'error' ? 'fa-circle-exclamation' : 'fa-circle-check'}`}></i>
+                                {message.text}
+                            </div>
+                        )}
+
+                        {adminTab === 'members' && (
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                {/* Form Add Member */}
+                                <div className="glass-panel p-6 rounded-xl h-fit border-t-4 border-t-primary">
+                                    <h3 className="text-xl font-bold mb-4">เพิ่มสมาชิกใหม่</h3>
+                                    <form onSubmit={handleAddMember} className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm text-gray-400 mb-1">ชื่อผู้เล่น (In-game Name)</label>
+                                            <input 
+                                                type="text" 
+                                                required
+                                                value={newMemberName}
+                                                onChange={(e) => setNewMemberName(e.target.value)}
+                                                className="w-full bg-dark border border-gray-700 rounded-lg px-4 py-2 text-white focus:border-primary focus:outline-none"
+                                                placeholder="เช่น Somchai_B"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm text-gray-400 mb-1">เลือกสังกัด</label>
+                                            <select 
+                                                value={selectedGangForMember}
+                                                onChange={(e) => setSelectedGangForMember(e.target.value)}
+                                                className="w-full bg-dark border border-gray-700 rounded-lg px-4 py-2 text-white focus:border-primary focus:outline-none"
+                                            >
+                                                {gangs.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm text-gray-400 mb-1">ตำแหน่ง</label>
+                                            <select 
+                                                value={selectedRole}
+                                                onChange={(e) => setSelectedRole(e.target.value)}
+                                                className="w-full bg-dark border border-gray-700 rounded-lg px-4 py-2 text-white focus:border-primary focus:outline-none"
+                                            >
+                                                {ROLES.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                            </select>
+                                        </div>
+                                        <button type="submit" className="w-full bg-primary hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors flex justify-center items-center gap-2">
+                                            <i className="fa-solid fa-plus"></i> เพิ่มเข้าสู่ระบบ
+                                        </button>
+                                    </form>
+                                </div>
+
+                                {/* List Members */}
+                                <div className="lg:col-span-2 glass-panel p-6 rounded-xl">
+                                    <h3 className="text-xl font-bold mb-4">รายชื่อสมาชิกล่าสุด (สามารถแก้ไข/ลบได้)</h3>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-sm">
+                                            <thead>
+                                                <tr className="border-b border-gray-700 text-gray-400">
+                                                    <th className="pb-3 pr-4">ชื่อ</th>
+                                                    <th className="pb-3 px-4">สังกัด</th>
+                                                    <th className="pb-3 px-4">ตำแหน่ง</th>
+                                                    <th className="pb-3 px-4">สถานะ</th>
+                                                    <th className="pb-3 pl-4 text-right">จัดการ</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-800">
+                                                {members.slice().reverse().slice(0, 10).map(member => {
+                                                    const gang = gangs.find(g => g.id === member.gangId);
+                                                    const onCooldown = isCooldownActive(member.cooldownUntil);
+                                                    return (
+                                                        <tr key={member.id} className="hover:bg-white/5">
+                                                            <td className="py-3 pr-4 font-medium text-white">{member.name}</td>
+                                                            <td className="py-3 px-4 text-gray-400">{gang ? gang.name : '-'}</td>
+                                                            <td className="py-3 px-4">
+                                                                <span className="text-xs px-2 py-1 bg-gray-800 rounded text-gray-300">
+                                                                    {getMemberRoleInfo(member.role).name}
+                                                                </span>
+                                                            </td>
+                                                            <td className="py-3 px-4">
+                                                                {onCooldown ? 
+                                                                    <span className="text-red-400 text-xs"><i className="fa-solid fa-clock"></i> ติดดีเลย์</span> : 
+                                                                    <span className="text-green-400 text-xs"><i className="fa-solid fa-check"></i> ปกติ</span>
+                                                                }
+                                                            </td>
+                                                            <td className="py-3 pl-4 text-right">
+                                                                {gang && (
+                                                                    <button 
+                                                                        onClick={() => handleKickMember(member.id, member.name)}
+                                                                        className="text-red-400 hover:text-red-300 bg-red-400/10 px-2 py-1 rounded text-xs transition-colors"
+                                                                        title="เตะออกและติดดีเลย์"
+                                                                    >
+                                                                        Kick
+                                                                    </button>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    )
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <p className="text-xs text-gray-500 mt-4">* แสดงเฉพาะ 10 รายการล่าสุด เพื่อการสาธิตระบบ</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {adminTab === 'gangs' && (
+                            <div className="glass-panel p-10 rounded-xl text-center text-gray-400">
+                                <i className="fa-solid fa-person-digging text-4xl mb-4 text-gray-600"></i>
+                                <h3 className="text-xl text-white mb-2">ระบบจัดการแก๊ง (อยู่ระหว่างพัฒนา)</h3>
+                                <p>ในส่วนนี้จะใช้สำหรับ เพิ่มแก๊งใหม่, อัปโหลดโลโก้, แก้ไขกฎแก๊ง, และลบแก๊ง</p>
+                            </div>
+                        )}
+                    </div>
+                );
+            };
+
+            // --- RENDER ---
+            return (
+                <div className="min-h-screen flex flex-col md:flex-row bg-darker font-sans text-gray-200">
+                    
+                    {/* Mobile Header & Toggle */}
+                    <div className="md:hidden flex items-center justify-between p-4 bg-card border-b border-white/5 sticky top-0 z-50">
+                        <div className="font-bold text-xl text-white flex items-center gap-2">
+                            <i className="fa-solid fa-city text-primary"></i> LS Directory
+                        </div>
+                        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-2xl text-gray-400 focus:outline-none">
+                            <i className={`fa-solid ${isMobileMenuOpen ? 'fa-xmark' : 'fa-bars'}`}></i>
+                        </button>
+                    </div>
+
+                    {/* Sidebar Navigation */}
+                    <nav className={`${isMobileMenuOpen ? 'block' : 'hidden'} md:block w-full md:w-64 flex-shrink-0 bg-card border-r border-white/5 md:h-screen md:sticky md:top-0 z-40 overflow-y-auto`}>
+                        <div className="p-6 hidden md:block">
+                            <div className="font-bold text-2xl text-white flex items-center gap-3">
+                                <div className="w-8 h-8 rounded bg-primary flex items-center justify-center text-sm shadow-lg shadow-primary/30">
+                                    <i className="fa-solid fa-city"></i>
+                                </div>
+                                LS Directory
+                            </div>
+                            <p className="text-xs text-gray-500 mt-2">FiveM Management System</p>
+                        </div>
+
+                        <div className="px-4 pb-6 space-y-1 mt-4 md:mt-0">
+                            <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-3">Main Menu</div>
+                            {[
+                                { id: 'home', icon: 'fa-house', label: 'หน้าแรก' },
+                                { id: 'search', icon: 'fa-magnifying-glass', label: 'ค้นหาผู้เล่น' },
+                                { id: 'topGang', icon: 'fa-chart-simple', label: 'จัดอันดับแก๊ง' },
+                                { id: 'rules', icon: 'fa-book', label: 'กฎหมายเมือง' }
+                            ].map(item => (
+                                <button 
+                                    key={item.id}
+                                    onClick={() => navigate(item.id)}
+                                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === item.id || (item.id==='home' && (activeTab==='gangList' || activeTab==='gangProfile')) ? 'bg-primary/10 text-primary font-medium border border-primary/20' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}
+                                >
+                                    <i className={`fa-solid ${item.icon} w-5 text-center`}></i> {item.label}
+                                </button>
+                            ))}
+
+                            <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-3 mt-8">System</div>
+                            <button 
+                                onClick={() => navigate('admin')}
+                                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${activeTab === 'admin' ? 'bg-red-500/10 text-red-500 font-medium border border-red-500/20' : 'text-gray-400 hover:bg-red-500/5 hover:text-red-400'}`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <i className="fa-solid fa-gear w-5 text-center"></i> Admin Panel
+                                </div>
+                                <i className="fa-solid fa-lock text-xs opacity-50"></i>
+                            </button>
+                        </div>
+                    </nav>
+
+                    {/* Main Content Area */}
+                    <main className="flex-grow p-4 md:p-8 lg:p-12 overflow-x-hidden">
+                        {activeTab === 'home' && <HomeView />}
+                        {activeTab === 'gangList' && <GangListView />}
+                        {activeTab === 'gangProfile' && <GangProfileView />}
+                        {activeTab === 'search' && <SearchView />}
+                        {activeTab === 'rules' && <RulesView />}
+                        {activeTab === 'topGang' && <TopGangView />}
+                        {activeTab === 'admin' && <AdminPanelView />}
+                    </main>
+
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+
+    <style>
+        /* CSS Animations */
+        .animate-fade-in {
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</body>
+</html>
